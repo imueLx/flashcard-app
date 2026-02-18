@@ -1,0 +1,801 @@
+"use client";
+
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  FlashcardOptionKey,
+  flashcardLevelMeta,
+  getFlashcardsByLevel,
+  getMasteryPercent,
+  getStarsEarned,
+  getBadge,
+  normalizeLevel,
+  shuffleCards,
+  type Flashcard,
+} from "../data/flashcard";
+
+type WrongAnswer = {
+  card: Flashcard;
+  picked: FlashcardOptionKey;
+};
+
+type PersistedWrongAnswer = {
+  cardId: number;
+  picked: FlashcardOptionKey;
+};
+
+type PersistedQuizState = {
+  cardIds: number[];
+  activeIndex: number;
+  selectedOption: FlashcardOptionKey | null;
+  showBack: boolean;
+  score: number;
+  isShuffled: boolean;
+  wrongAnswers: PersistedWrongAnswer[];
+};
+
+const BACKGROUND_MUSIC_URL = "/audio/background-audio.mp3";
+
+export default function QuizPage() {
+  return (
+    <Suspense fallback={<QuizLoadingShell />}>
+      <QuizContent />
+    </Suspense>
+  );
+}
+
+function QuizContent() {
+  const searchParams = useSearchParams();
+  const level = normalizeLevel(searchParams.get("level"));
+  const levelMeta = flashcardLevelMeta[level];
+  const baseCards = getFlashcardsByLevel(level);
+  const quizStateKey = `quiz-state-v1-${level}`;
+
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [cards, setCards] = useState<Flashcard[]>(baseCards);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [selectedOption, setSelectedOption] =
+    useState<FlashcardOptionKey | null>(null);
+  const [showBack, setShowBack] = useState(false);
+  const [score, setScore] = useState(0);
+  const [isMusicOn, setIsMusicOn] = useState(false);
+  const [isMusicAvailable, setIsMusicAvailable] = useState(true);
+  const [isShuffled, setIsShuffled] = useState(false);
+  const [wrongAnswers, setWrongAnswers] = useState<WrongAnswer[]>([]);
+  const [showReview, setShowReview] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [starAnimation, setStarAnimation] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const activeCard = cards[activeIndex] ?? null;
+  const isAnswered = selectedOption !== null;
+  const isLastCard = activeIndex >= cards.length - 1;
+  const completedCards = activeIndex + (isAnswered ? 1 : 0);
+  const progressPercent =
+    cards.length > 0 ? (completedCards / cards.length) * 100 : 0;
+  const quizDone = isLastCard && isAnswered;
+  const masteryPercent = getMasteryPercent(score, cards.length);
+  const starsEarned = getStarsEarned(masteryPercent);
+  const badge = getBadge(masteryPercent);
+
+  function hasSameOrder(first: Flashcard[], second: Flashcard[]): boolean {
+    if (first.length !== second.length) {
+      return false;
+    }
+
+    return first.every((card, index) => card.id === second[index]?.id);
+  }
+
+  function getShuffledDeck(
+    source: Flashcard[],
+    previous: Flashcard[],
+  ): Flashcard[] {
+    if (source.length < 2) {
+      return source;
+    }
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const shuffled = shuffleCards(source);
+      if (!hasSameOrder(shuffled, previous)) {
+        return shuffled;
+      }
+    }
+
+    return [...source.slice(1), source[0]];
+  }
+
+  useEffect(() => {
+    setIsHydrated(false);
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+
+    const cardsById = new Map(baseCards.map((card) => [card.id, card]));
+
+    try {
+      const raw = localStorage.getItem(quizStateKey);
+      if (!raw) {
+        throw new Error("no-saved-state");
+      }
+
+      const saved = JSON.parse(raw) as PersistedQuizState;
+      const restoredCards = saved.cardIds
+        .map((id) => cardsById.get(id))
+        .filter((card): card is Flashcard => Boolean(card));
+
+      const uniqueRestoredIds = new Set(restoredCards.map((card) => card.id));
+      const missingCards = baseCards.filter(
+        (card) => !uniqueRestoredIds.has(card.id),
+      );
+      const deck = [...restoredCards, ...missingCards];
+
+      const maxIndex = Math.max(deck.length - 1, 0);
+      const safeIndex = Math.min(Math.max(saved.activeIndex ?? 0, 0), maxIndex);
+
+      setCards(deck.length > 0 ? deck : getShuffledDeck(baseCards, baseCards));
+      setActiveIndex(safeIndex);
+      setSelectedOption(saved.selectedOption ?? null);
+      setShowBack(Boolean(saved.showBack));
+      setScore(Math.max(saved.score ?? 0, 0));
+      setIsShuffled(Boolean(saved.isShuffled));
+      setWrongAnswers(
+        (saved.wrongAnswers ?? [])
+          .map((item) => {
+            const card = cardsById.get(item.cardId);
+            if (!card) {
+              return null;
+            }
+
+            return {
+              card,
+              picked: item.picked,
+            };
+          })
+          .filter((item): item is WrongAnswer => Boolean(item)),
+      );
+      setShowReview(false);
+      setImageFailed(false);
+    } catch {
+      setSelectedOption(null);
+      setShowBack(false);
+      setCards((previousCards) => getShuffledDeck(baseCards, previousCards));
+      setActiveIndex(0);
+      setScore(0);
+      setWrongAnswers([]);
+      setShowReview(false);
+      setIsShuffled(true);
+      setImageFailed(false);
+    }
+
+    setIsHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [level]);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    const state: PersistedQuizState = {
+      cardIds: cards.map((card) => card.id),
+      activeIndex,
+      selectedOption,
+      showBack,
+      score,
+      isShuffled,
+      wrongAnswers: wrongAnswers.map((item) => ({
+        cardId: item.card.id,
+        picked: item.picked,
+      })),
+    };
+
+    localStorage.setItem(quizStateKey, JSON.stringify(state));
+  }, [
+    activeIndex,
+    cards,
+    isHydrated,
+    isShuffled,
+    quizStateKey,
+    score,
+    selectedOption,
+    showBack,
+    wrongAnswers,
+  ]);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [activeIndex]);
+
+  useEffect(() => {
+    const audio = new Audio(BACKGROUND_MUSIC_URL);
+    audio.loop = true;
+    audio.volume = 0.15;
+    audio.preload = "none";
+    audio.addEventListener("error", () => {
+      setIsMusicOn(false);
+      setIsMusicAvailable(false);
+    });
+    audioRef.current = audio;
+    return () => {
+      audio.pause();
+      audioRef.current = null;
+    };
+  }, []);
+
+  const toggleMusic = useCallback(async () => {
+    const audio = audioRef.current;
+    if (!audio || !isMusicAvailable) return;
+    if (isMusicOn) {
+      audio.pause();
+      setIsMusicOn(false);
+      return;
+    }
+    try {
+      await audio.play();
+      setIsMusicOn(true);
+    } catch {
+      setIsMusicOn(false);
+      setIsMusicAvailable(false);
+    }
+  }, [isMusicAvailable, isMusicOn]);
+
+  function handleShuffle() {
+    setCards((previousCards) => getShuffledDeck(baseCards, previousCards));
+    setActiveIndex(0);
+    setSelectedOption(null);
+    setShowBack(false);
+    setScore(0);
+    setWrongAnswers([]);
+    setIsShuffled(true);
+    setShowReview(false);
+  }
+
+  function answer(option: FlashcardOptionKey) {
+    if (!activeCard || isAnswered) return;
+    const correct = option === activeCard.answer;
+    setSelectedOption(option);
+    setShowBack(true);
+    if (correct) {
+      setScore((c) => c + 1);
+      setStarAnimation(true);
+      setTimeout(() => setStarAnimation(false), 600);
+    } else {
+      setWrongAnswers((prev) => [
+        ...prev,
+        { card: activeCard, picked: option },
+      ]);
+    }
+    // Show confetti on last correct answer for perfect score
+    if (correct && isLastCard && score + 1 === cards.length) {
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 2000);
+    }
+  }
+
+  function nextCard() {
+    if (!isAnswered || isLastCard) return;
+    setActiveIndex((c) => c + 1);
+    setSelectedOption(null);
+    setShowBack(false);
+  }
+
+  function prevCard() {
+    if (activeIndex === 0) return;
+    setActiveIndex((c) => c - 1);
+    setSelectedOption(null);
+    setShowBack(false);
+  }
+
+  function restart() {
+    setActiveIndex(0);
+    setSelectedOption(null);
+    setShowBack(false);
+    setScore(0);
+    setWrongAnswers([]);
+    setShowReview(false);
+    setShowConfetti(false);
+    if (isShuffled) {
+      setCards((previousCards) => getShuffledDeck(baseCards, previousCards));
+    }
+  }
+
+  function resetProgress() {
+    localStorage.removeItem(quizStateKey);
+    setCards(getShuffledDeck(baseCards, baseCards));
+    setActiveIndex(0);
+    setSelectedOption(null);
+    setShowBack(false);
+    setScore(0);
+    setWrongAnswers([]);
+    setIsShuffled(true);
+    setShowReview(false);
+    setShowConfetti(false);
+    setImageFailed(false);
+  }
+
+  function flipCard() {
+    if (!isAnswered) return;
+    setShowBack((c) => !c);
+  }
+
+  if (!isHydrated) return <QuizLoadingShell />;
+
+  // ─── Review Wrong Answers View ───
+  if (showReview) {
+    return (
+      <div className="safe-area-content min-h-screen bg-background px-3 py-5 text-foreground sm:px-4 sm:py-8">
+        <main className="mx-auto w-full max-w-4xl">
+          <div className="rounded-3xl border-2 border-pink-200 bg-white p-5 shadow-xl sm:p-8">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              <h1 className="text-2xl font-black text-pink-800 sm:text-3xl">
+                📝 Review Mistakes
+              </h1>
+              <button
+                type="button"
+                onClick={() => setShowReview(false)}
+                className="rounded-2xl border-2 border-pink-300 bg-pink-50 px-5 py-2 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+              >
+                ← Back to Results
+              </button>
+            </div>
+
+            {wrongAnswers.length === 0 ? (
+              <div className="rounded-2xl bg-green-50 p-6 text-center">
+                <p className="text-4xl">🎉</p>
+                <p className="mt-2 text-lg font-black text-green-700">
+                  Perfect score! No mistakes!
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {wrongAnswers.map((w, i) => (
+                  <div
+                    key={w.card.id}
+                    className="animate-slide-up rounded-2xl border-2 border-pink-200 bg-pink-50/50 p-5"
+                    style={{
+                      animationDelay: `${i * 0.05}s`,
+                      animationFillMode: "both",
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-base font-black text-pink-800">
+                        Q{i + 1}: {w.card.front}
+                      </p>
+                      <span className="shrink-0 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-600">
+                        ✗ Wrong
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+                        <p className="text-xs font-bold uppercase text-red-400">
+                          Your answer
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-red-700">
+                          {w.picked.toUpperCase()}. {w.card.options[w.picked]}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-green-200 bg-green-50 p-3">
+                        <p className="text-xs font-bold uppercase text-green-500">
+                          Correct answer
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-green-700">
+                          {w.card.answer.toUpperCase()}.{" "}
+                          {w.card.options[w.card.answer]}
+                        </p>
+                      </div>
+                    </div>
+                    {w.card.explanation && (
+                      <p className="mt-3 rounded-xl bg-white p-3 text-sm font-semibold text-pink-700/80">
+                        💡 {w.card.explanation}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={restart}
+                className="rounded-2xl bg-linear-to-r from-pink-500 to-pink-400 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:-translate-y-0.5"
+              >
+                Try Again 🔄
+              </button>
+              <Link
+                href="/"
+                className="rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+              >
+                Home 🏠
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="safe-area-content min-h-screen bg-background px-3 py-5 text-foreground sm:px-4 sm:py-8">
+      {/* Confetti */}
+      {showConfetti && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-start justify-center overflow-hidden">
+          {Array.from({ length: 20 }).map((_, i) => (
+            <span
+              key={i}
+              className="animate-confetti absolute text-2xl"
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 0.5}s`,
+                animationDuration: `${1 + Math.random() * 1}s`,
+              }}
+            >
+              {["🌸", "⭐", "💖", "🎀", "✨"][i % 5]}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <main className="mx-auto w-full max-w-4xl">
+        {/* ─── Header ─── */}
+        <header className="mb-3 rounded-2xl border-2 border-pink-200 bg-white px-3 py-2 shadow-sm sm:mb-6 sm:rounded-3xl sm:px-4 sm:py-3">
+          <div className="flex items-center justify-between gap-2">
+            <Link
+              href="/"
+              className="inline-flex shrink-0 items-center gap-1 rounded-xl border-2 border-pink-200 bg-pink-50 px-3 py-1.5 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+            >
+              ←<span className="hidden sm:inline">&nbsp;Home</span>
+            </Link>
+            <p className="min-w-0 truncate rounded-full bg-pink-100 px-2.5 py-1 text-[11px] font-extrabold text-pink-600 sm:px-3 sm:text-sm">
+              {levelMeta.label} • {Math.min(activeIndex + 1, cards.length)}/
+              {cards.length}
+              {isShuffled && " 🔀"}
+            </p>
+
+            <div className="flex shrink-0 items-center gap-1.5">
+              <div
+                className={`flex items-center gap-0.5 rounded-xl border border-pink-200 bg-pink-50 px-2 py-1 ${starAnimation ? "animate-bounce-star" : ""}`}
+              >
+                <span className="text-sm">⭐</span>
+                <span className="text-xs font-extrabold text-pink-700">
+                  {score}/{cards.length}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleShuffle}
+                className="rounded-xl border-2 border-pink-200 bg-pink-50 px-2 py-1.5 text-sm transition hover:bg-pink-100"
+                title="Shuffle cards"
+              >
+                🔀
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleMusic}
+                disabled={!isMusicAvailable}
+                className="rounded-xl border-2 border-pink-200 bg-pink-50 px-2 py-1.5 text-sm transition hover:bg-pink-100 disabled:opacity-50"
+                aria-label={isMusicOn ? "Mute music" : "Play music"}
+              >
+                {isMusicAvailable ? (isMusicOn ? "🔊" : "🔇") : "🚫"}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* ─── Main Card Area ─── */}
+        <section className="rounded-3xl border-2 border-pink-200 bg-white p-4 shadow-lg sm:p-6">
+          {/* Title and badge */}
+          <div className="mb-2 flex items-center justify-between gap-2 sm:mb-5">
+            <h1 className="text-lg font-black text-pink-800 sm:text-3xl">
+              {levelMeta.label} Level
+            </h1>
+            <span className="hidden rounded-full border-2 border-pink-300 bg-pink-100 px-3 py-1 text-xs font-extrabold uppercase tracking-wide text-pink-600 sm:inline-block sm:text-sm">
+              Grade 5 English
+            </span>
+          </div>
+
+          {/* Progress bar */}
+          <div className="mb-4 flex items-center gap-3 sm:mb-6">
+            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-pink-100 sm:h-3">
+              <div
+                className="h-full rounded-full bg-linear-to-r from-pink-500 to-pink-400 transition-all duration-500"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            <span className="text-[11px] font-bold text-pink-500 sm:text-xs">
+              {Math.round(progressPercent)}%
+            </span>
+          </div>
+
+          {/* ─── Flashcard ─── */}
+          <article className="mx-auto w-full max-w-3xl">
+            <div className="relative sm:pb-2">
+              {/* Stacked card effect (desktop only) */}
+              <div className="pointer-events-none absolute inset-x-3 top-2 hidden h-full rounded-3xl border border-pink-200 bg-pink-100/50 sm:block" />
+              <div className="pointer-events-none absolute inset-x-1.5 top-1 hidden h-full rounded-3xl border border-pink-200 bg-white/80 sm:block" />
+
+              <section
+                key={`${activeIndex}-${showBack ? "back" : "front"}`}
+                className="study-card animate-card-flip relative rounded-2xl border-2 border-pink-300 bg-white p-3 shadow-2xl sm:min-h-96 sm:rounded-3xl sm:p-8"
+              >
+                {/* Card face label */}
+                <div className="mb-2 flex items-center justify-between sm:mb-5">
+                  <p className="rounded-full bg-pink-100 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-pink-600 sm:px-3 sm:py-1 sm:text-xs">
+                    {showBack ? "✨ Answer" : "📖 Question"}
+                  </p>
+                  <span className="text-[10px] font-semibold text-pink-400 sm:text-xs">
+                    Tap to flip
+                  </span>
+                </div>
+
+                {!activeCard ? (
+                  <div className="grid min-h-80 place-items-center text-center">
+                    <div>
+                      <p className="text-2xl font-black text-pink-800">
+                        No cards found
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-pink-500">
+                        Please pick another level.
+                      </p>
+                    </div>
+                  </div>
+                ) : !showBack ? (
+                  <>
+                    <div className="mb-3 grid min-h-20 place-items-center rounded-2xl border-2 border-dashed border-pink-300 bg-pink-50 p-2 text-center sm:mb-4 sm:min-h-28 sm:p-3">
+                      {activeCard.imageSrc && !imageFailed ? (
+                        <img
+                          src={activeCard.imageSrc}
+                          alt={`Question ${activeCard.id} illustration`}
+                          width={640}
+                          height={360}
+                          loading="lazy"
+                          decoding="async"
+                          onError={() => setImageFailed(true)}
+                          className="h-28 w-full rounded-xl object-contain sm:h-40"
+                        />
+                      ) : (
+                        <div>
+                          <p className="text-3xl">🖼️</p>
+                          <p className="mt-1 text-xs font-bold uppercase tracking-wide text-pink-400">
+                            Add image: /images/flashcards/{activeCard.id}.webp
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Question */}
+                    <p className="text-lg font-black leading-snug text-pink-900 sm:text-3xl">
+                      {activeCard.front}
+                    </p>
+
+                    {/* Options */}
+                    <div className="mt-4 grid gap-2 sm:mt-7 sm:gap-3">
+                      {(
+                        Object.entries(activeCard.options) as [
+                          FlashcardOptionKey,
+                          string,
+                        ][]
+                      ).map(([optionKey, value]) => {
+                        const isCorrect = optionKey === activeCard.answer;
+                        const isPicked = selectedOption === optionKey;
+
+                        let style =
+                          "border-pink-200 hover:border-pink-400 hover:bg-pink-50";
+                        if (isAnswered && isCorrect) {
+                          style = "border-green-400 bg-green-50 text-green-700";
+                        } else if (isAnswered && isPicked && !isCorrect) {
+                          style = "border-red-400 bg-red-50 text-red-600";
+                        }
+
+                        return (
+                          <button
+                            key={optionKey}
+                            type="button"
+                            onClick={() => answer(optionKey)}
+                            disabled={isAnswered}
+                            className={`rounded-2xl border-2 bg-white px-3 py-3 text-left text-sm font-semibold transition sm:px-4 sm:py-4 sm:text-base ${style} ${
+                              isAnswered ? "cursor-default" : "cursor-pointer"
+                            } ${isAnswered && isCorrect ? "animate-pop-in" : ""} ${isAnswered && isPicked && !isCorrect ? "animate-shake" : ""}`}
+                          >
+                            <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-pink-100 text-xs font-black uppercase text-pink-600 sm:mr-3 sm:h-7 sm:w-7 sm:text-sm">
+                              {optionKey}
+                            </span>
+                            {value}
+                            {isAnswered && isCorrect && (
+                              <span className="ml-2">✅</span>
+                            )}
+                            {isAnswered && isPicked && !isCorrect && (
+                              <span className="ml-2">❌</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {!isAnswered && (
+                      <p className="mt-2 text-xs font-semibold text-pink-400 sm:mt-5 sm:text-sm">
+                        Pick an answer ✨
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  /* ─── Back of Card ─── */
+                  <div className="flex h-full flex-col justify-between gap-4 sm:gap-6">
+                    <div>
+                      <p className="text-base font-extrabold text-pink-600 sm:text-lg">
+                        Correct Answer
+                      </p>
+                      <p className="mt-1 text-xl font-black text-pink-800 sm:text-4xl">
+                        {activeCard.answer.toUpperCase()}.{" "}
+                        {activeCard.options[activeCard.answer]}
+                      </p>
+
+                      <div
+                        className={`mt-3 rounded-2xl border-2 p-3 sm:mt-6 sm:p-5 ${
+                          selectedOption === activeCard?.answer
+                            ? "border-green-300 bg-green-50"
+                            : "border-red-300 bg-red-50"
+                        }`}
+                      >
+                        <p className="text-base font-extrabold">
+                          {selectedOption === activeCard?.answer
+                            ? "✅ You got it right!"
+                            : "❌ Not quite right"}
+                        </p>
+                        <p className="mt-2 text-sm font-semibold opacity-85">
+                          {activeCard.explanation ??
+                            "Review the sentence and subject agreement rule."}
+                        </p>
+                      </div>
+
+                      {/* Star earned indicator */}
+                      {selectedOption === activeCard?.answer && (
+                        <div className="mt-3 flex items-center gap-2 rounded-xl border border-yellow-200 bg-yellow-50 p-2 sm:mt-4 sm:p-3">
+                          <span className="animate-bounce-star text-2xl">
+                            ⭐
+                          </span>
+                          <span className="text-sm font-bold text-yellow-700">
+                            +1 Star earned!
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-xs font-semibold text-pink-400 sm:text-sm">
+                      Flip to see question, or Next →
+                    </p>
+                  </div>
+                )}
+              </section>
+            </div>
+          </article>
+
+          {/* ─── Navigation Controls ─── */}
+          <div className="mx-auto mt-4 w-full max-w-3xl sm:mt-6">
+            <div className="grid grid-cols-4 gap-1.5 rounded-2xl border-2 border-pink-200 bg-pink-50 p-2 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-2 sm:p-3">
+              <button
+                type="button"
+                onClick={prevCard}
+                disabled={activeIndex === 0}
+                className="w-full rounded-xl border-2 border-pink-300 bg-white px-1 py-2.5 text-xs font-bold text-pink-600 transition hover:bg-pink-100 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-4 sm:text-sm"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={flipCard}
+                disabled={!isAnswered}
+                className="w-full rounded-xl border-2 border-pink-300 bg-white px-1 py-2.5 text-xs font-bold text-pink-600 transition hover:bg-pink-100 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-4 sm:text-sm"
+              >
+                {showBack ? "Front" : "Flip"} 🔄
+              </button>
+              <button
+                type="button"
+                onClick={restart}
+                className="w-full rounded-xl border-2 border-pink-300 bg-white px-1 py-2.5 text-xs font-bold text-pink-600 transition hover:bg-pink-100 sm:w-auto sm:rounded-2xl sm:px-4 sm:text-sm"
+              >
+                Redo 🔁
+              </button>
+              <button
+                type="button"
+                onClick={nextCard}
+                disabled={!isAnswered || isLastCard}
+                className="w-full rounded-xl bg-linear-to-r from-pink-500 to-pink-400 px-1 py-2.5 text-xs font-extrabold text-white shadow-md shadow-pink-500/25 transition hover:-translate-y-0.5 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-5 sm:text-sm"
+              >
+                Next →
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={resetProgress}
+              className="mt-2 w-full rounded-xl border border-pink-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-pink-400 transition hover:bg-pink-50 hover:text-pink-600 sm:text-xs"
+            >
+              🗑️ Reset Progress
+            </button>
+          </div>
+
+          {/* ─── Quiz Complete Panel ─── */}
+          {quizDone && (
+            <div className="mx-auto mt-6 w-full max-w-3xl animate-pop-in rounded-3xl border-2 border-pink-300 bg-linear-to-b from-pink-50 to-white p-6 text-center shadow-lg">
+              {/* Badge */}
+              <div className="mb-3 text-5xl">{badge.emoji}</div>
+              <h2 className="text-2xl font-black text-pink-800">
+                {badge.label}
+              </h2>
+
+              {/* Stars */}
+              <div className="mt-3 flex items-center justify-center gap-1">
+                {[1, 2, 3].map((n) => (
+                  <span
+                    key={n}
+                    className={`text-3xl ${n <= starsEarned ? "animate-bounce-star" : "opacity-30"}`}
+                    style={{ animationDelay: `${n * 0.15}s` }}
+                  >
+                    ⭐
+                  </span>
+                ))}
+              </div>
+
+              {/* Score */}
+              <div className="mt-4 rounded-2xl border-2 border-pink-200 bg-white p-4">
+                <p className="text-sm font-bold text-pink-500">Mastery Score</p>
+                <p className="mt-1 text-4xl font-black text-pink-700">
+                  {masteryPercent}%
+                </p>
+                <p className="mt-1 text-sm font-semibold text-pink-500">
+                  {score} out of {cards.length} correct
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="mt-5 flex flex-wrap justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={restart}
+                  className="rounded-2xl bg-linear-to-r from-pink-500 to-pink-400 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:-translate-y-0.5"
+                >
+                  Play Again 🔄
+                </button>
+                {wrongAnswers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowReview(true)}
+                    className="rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+                  >
+                    Review Mistakes 📝
+                  </button>
+                )}
+                <Link
+                  href="/"
+                  className="rounded-2xl border-2 border-pink-300 bg-white px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-50"
+                >
+                  Home 🏠
+                </Link>
+              </div>
+            </div>
+          )}
+        </section>
+      </main>
+
+      <div className="h-6" />
+    </div>
+  );
+}
+
+function QuizLoadingShell() {
+  return (
+    <div className="safe-area-content min-h-screen bg-background px-4 py-8 text-foreground sm:py-10">
+      <main className="mx-auto w-full max-w-4xl">
+        <section className="rounded-3xl border-2 border-pink-200 bg-white p-6 shadow-xl sm:p-8">
+          <div className="h-8 w-48 animate-pulse rounded-xl bg-pink-100" />
+          <div className="mt-6 h-96 animate-pulse rounded-3xl bg-pink-50" />
+        </section>
+      </main>
+    </div>
+  );
+}
