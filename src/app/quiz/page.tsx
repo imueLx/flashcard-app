@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type TouchEvent,
+} from "react";
 import {
   FlashcardOptionKey,
   flashcardLevelMeta,
@@ -67,8 +75,10 @@ function QuizContent() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [starAnimation, setStarAnimation] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const touchStartXRef = useRef<number | null>(null);
 
   const activeCard = cards[activeIndex] ?? null;
   const isAnswered = selectedOption !== null;
@@ -242,17 +252,6 @@ function QuizContent() {
     }
   }, [isMusicAvailable, isMusicOn]);
 
-  function handleShuffle() {
-    setCards((previousCards) => getShuffledDeck(baseCards, previousCards));
-    setActiveIndex(0);
-    setSelectedOption(null);
-    setShowBack(false);
-    setScore(0);
-    setWrongAnswers([]);
-    setIsShuffled(true);
-    setShowReview(false);
-  }
-
   function answer(option: FlashcardOptionKey) {
     if (!activeCard || isAnswered) return;
     const correct = option === activeCard.answer;
@@ -321,7 +320,81 @@ function QuizContent() {
     setShowBack((c) => !c);
   }
 
+  function handleCardTap(event: MouseEvent<HTMLElement>) {
+    if (!isAnswered) return;
+
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, textarea, select, label")) {
+      return;
+    }
+
+    setShowBack((c) => !c);
+  }
+
+  function handleCardTouchStart(event: TouchEvent<HTMLElement>) {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, textarea, select, label")) {
+      touchStartXRef.current = null;
+      return;
+    }
+
+    touchStartXRef.current = event.changedTouches[0]?.clientX ?? null;
+  }
+
+  function handleCardTouchEnd(event: TouchEvent<HTMLElement>) {
+    if (!isAnswered) return;
+
+    const startX = touchStartXRef.current;
+    touchStartXRef.current = null;
+
+    if (startX === null) {
+      return;
+    }
+
+    const endX = event.changedTouches[0]?.clientX;
+    if (typeof endX !== "number") {
+      return;
+    }
+
+    if (Math.abs(endX - startX) >= 40) {
+      setShowBack((c) => !c);
+    }
+  }
+
   if (!isHydrated) return <QuizLoadingShell />;
+
+  // ─── Offline / empty data fallback ───
+  if (cards.length === 0) {
+    return (
+      <div className="safe-area-content flex min-h-screen items-center justify-center bg-background px-4 py-8 text-foreground">
+        <div className="w-full max-w-md rounded-3xl border-2 border-pink-200 bg-white p-6 text-center shadow-xl">
+          <p className="text-5xl">📴</p>
+          <h1 className="mt-4 text-2xl font-black text-pink-800">
+            No Cards Available
+          </h1>
+          <p className="mt-2 text-sm font-semibold text-pink-600/80">
+            The flashcard data couldn&apos;t load. This may happen if the app
+            hasn&apos;t finished caching for offline use.
+          </p>
+          <div className="mt-6 flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="rounded-2xl bg-pink-500 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:bg-pink-600"
+            >
+              Try Again 🔄
+            </button>
+            <Link
+              href="/"
+              className="rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+            >
+              ← Back to Home
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ─── Review Wrong Answers View ───
   if (showReview) {
@@ -336,7 +409,7 @@ function QuizContent() {
               <button
                 type="button"
                 onClick={() => setShowReview(false)}
-                className="rounded-2xl border-2 border-pink-300 bg-pink-50 px-5 py-2 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+                className="rounded-2xl bg-pink-500 px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-pink-600"
               >
                 ← Back to Results
               </button>
@@ -419,7 +492,7 @@ function QuizContent() {
   }
 
   return (
-    <div className="safe-area-content min-h-screen bg-background px-3 py-5 text-foreground sm:px-4 sm:py-8">
+    <div className="safe-area-content flex min-h-dvh flex-col bg-background px-3 py-6 text-foreground sm:px-4 sm:py-8">
       {/* Confetti */}
       {showConfetti && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-start justify-center overflow-hidden">
@@ -439,15 +512,15 @@ function QuizContent() {
         </div>
       )}
 
-      <main className="mx-auto w-full max-w-4xl">
+      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center sm:justify-start">
         {/* ─── Header ─── */}
         <header className="mb-3 rounded-2xl border-2 border-pink-200 bg-white px-3 py-2 shadow-sm sm:mb-6 sm:rounded-3xl sm:px-4 sm:py-3">
           <div className="flex items-center justify-between gap-2">
             <Link
               href="/"
-              className="inline-flex shrink-0 items-center gap-1 rounded-xl border-2 border-pink-200 bg-pink-50 px-3 py-1.5 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-pink-500 px-3.5 py-2 text-sm font-extrabold text-white shadow-sm transition hover:bg-pink-600 sm:px-4"
             >
-              ←<span className="hidden sm:inline">&nbsp;Home</span>
+              ← Home
             </Link>
             <p className="min-w-0 truncate rounded-full bg-pink-100 px-2.5 py-1 text-[11px] font-extrabold text-pink-600 sm:px-3 sm:text-sm">
               {levelMeta.label} • {Math.min(activeIndex + 1, cards.length)}/
@@ -464,15 +537,6 @@ function QuizContent() {
                   {score}/{cards.length}
                 </span>
               </div>
-
-              <button
-                type="button"
-                onClick={handleShuffle}
-                className="rounded-xl border-2 border-pink-200 bg-pink-50 px-2 py-1.5 text-sm transition hover:bg-pink-100"
-                title="Shuffle cards"
-              >
-                🔀
-              </button>
 
               <button
                 type="button"
@@ -522,15 +586,30 @@ function QuizContent() {
               <section
                 key={`${activeIndex}-${showBack ? "back" : "front"}`}
                 className="study-card animate-card-flip relative rounded-2xl border-2 border-pink-300 bg-white p-3 shadow-2xl sm:min-h-96 sm:rounded-3xl sm:p-8"
+                onClick={handleCardTap}
+                onTouchStart={handleCardTouchStart}
+                onTouchEnd={handleCardTouchEnd}
+                onKeyDown={(event) => {
+                  if (!isAnswered) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setShowBack((c) => !c);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label="Flashcard. Tap, swipe, or press Enter to flip after answering."
               >
                 {/* Card face label */}
                 <div className="mb-2 flex items-center justify-between sm:mb-5">
                   <p className="rounded-full bg-pink-100 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-pink-600 sm:px-3 sm:py-1 sm:text-xs">
                     {showBack ? "✨ Answer" : "📖 Question"}
                   </p>
-                  <span className="text-[10px] font-semibold text-pink-400 sm:text-xs">
-                    Tap to flip
-                  </span>
+                  {isAnswered && (
+                    <span className="text-[10px] font-semibold text-pink-400 sm:text-xs">
+                      Tap or swipe to flip
+                    </span>
+                  )}
                 </div>
 
                 {!activeCard ? (
@@ -677,47 +756,73 @@ function QuizContent() {
 
           {/* ─── Navigation Controls ─── */}
           <div className="mx-auto mt-4 w-full max-w-3xl sm:mt-6">
-            <div className="grid grid-cols-4 gap-1.5 rounded-2xl border-2 border-pink-200 bg-pink-50 p-2 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-2 sm:p-3">
+            <div className="grid grid-cols-3 gap-1.5 rounded-2xl border-2 border-pink-200 bg-pink-50 p-2 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-2 sm:p-3">
               <button
                 type="button"
                 onClick={prevCard}
                 disabled={activeIndex === 0}
-                className="w-full rounded-xl border-2 border-pink-300 bg-white px-1 py-2.5 text-xs font-bold text-pink-600 transition hover:bg-pink-100 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-4 sm:text-sm"
+                className="w-full rounded-xl border-2 border-pink-300 bg-white px-2 py-2.5 text-xs font-bold text-pink-600 transition hover:bg-pink-100 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-4 sm:text-sm"
               >
-                ← Back
+                ← Prev
               </button>
               <button
                 type="button"
                 onClick={flipCard}
                 disabled={!isAnswered}
-                className="w-full rounded-xl border-2 border-pink-300 bg-white px-1 py-2.5 text-xs font-bold text-pink-600 transition hover:bg-pink-100 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-4 sm:text-sm"
+                className="w-full rounded-xl border-2 border-pink-300 bg-white px-2 py-2.5 text-xs font-bold text-pink-600 transition hover:bg-pink-100 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-4 sm:text-sm"
               >
-                {showBack ? "Front" : "Flip"} 🔄
-              </button>
-              <button
-                type="button"
-                onClick={restart}
-                className="w-full rounded-xl border-2 border-pink-300 bg-white px-1 py-2.5 text-xs font-bold text-pink-600 transition hover:bg-pink-100 sm:w-auto sm:rounded-2xl sm:px-4 sm:text-sm"
-              >
-                Redo 🔁
+                {showBack ? "Question" : "Flip"} 🔄
               </button>
               <button
                 type="button"
                 onClick={nextCard}
                 disabled={!isAnswered || isLastCard}
-                className="w-full rounded-xl bg-linear-to-r from-pink-500 to-pink-400 px-1 py-2.5 text-xs font-extrabold text-white shadow-md shadow-pink-500/25 transition hover:-translate-y-0.5 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-5 sm:text-sm"
+                className="w-full rounded-xl bg-linear-to-r from-pink-500 to-pink-400 px-2 py-2.5 text-xs font-extrabold text-white shadow-md shadow-pink-500/25 transition hover:-translate-y-0.5 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-5 sm:text-sm"
               >
                 Next →
               </button>
             </div>
             <button
               type="button"
-              onClick={resetProgress}
-              className="mt-2 w-full rounded-xl border border-pink-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-pink-400 transition hover:bg-pink-50 hover:text-pink-600 sm:text-xs"
+              onClick={() => setShowResetConfirm(true)}
+              className="mt-2 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-xs font-semibold text-pink-400 transition hover:bg-pink-50 hover:text-pink-600 sm:text-sm"
             >
-              🗑️ Reset Progress
+              🗑️ Reset Progress & Shuffle
             </button>
           </div>
+
+          {showResetConfirm && (
+            <div className="fixed inset-0 z-60 flex items-center justify-center bg-pink-900/35 px-4">
+              <div className="w-full max-w-sm rounded-3xl border-2 border-pink-200 bg-white p-5 shadow-2xl sm:p-6">
+                <h3 className="text-lg font-black text-pink-800 sm:text-xl">
+                  Reset progress?
+                </h3>
+                <p className="mt-2 text-sm font-semibold text-pink-600/80">
+                  This will clear your saved progress for this level and
+                  reshuffle the cards.
+                </p>
+                <div className="mt-5 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowResetConfirm(false)}
+                    className="rounded-xl border-2 border-pink-200 bg-pink-50 px-3 py-2 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetProgress();
+                      setShowResetConfirm(false);
+                    }}
+                    className="rounded-xl bg-pink-500 px-3 py-2 text-sm font-extrabold text-white transition hover:bg-pink-600"
+                  >
+                    Yes, Reset
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ─── Quiz Complete Panel ─── */}
           {quizDone && (

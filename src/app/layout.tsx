@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Fun Flashcards",
-  description: "Learn and play with fun flashcard quizzes!",
+  title: "Fun Flashcards — Grade 5 Subject-Verb Agreement",
+  description:
+    "An interactive flashcard quiz app for Grade 5 students to master Subject-Verb Agreement in English. 40 questions, 3 levels, offline support.",
   applicationName: "Fun Flashcards",
   manifest: "/manifest.webmanifest",
   appleWebApp: {

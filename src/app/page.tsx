@@ -25,6 +25,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Flashcard[]>([]);
   const [showSearch, setShowSearch] = useState(false);
+  const [isOfflineReady, setIsOfflineReady] = useState(false);
 
   useEffect(() => {
     const isSecure = window.isSecureContext;
@@ -33,9 +34,24 @@ export default function Home() {
     }
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
-        setInstallHint("Service worker unavailable. Check browser settings.");
-      });
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((reg) => {
+          if (reg.active) {
+            setIsOfflineReady(true);
+          }
+          reg.addEventListener("updatefound", () => {
+            const newWorker = reg.installing;
+            newWorker?.addEventListener("statechange", () => {
+              if (newWorker.state === "activated") {
+                setIsOfflineReady(true);
+              }
+            });
+          });
+        })
+        .catch(() => {
+          setInstallHint("Service worker unavailable. Check browser settings.");
+        });
     }
 
     const inStandaloneMode =
@@ -340,10 +356,51 @@ export default function Home() {
               </p>
             </div>
             <div className="rounded-2xl border border-pink-200 bg-white p-4">
-              <h4 className="font-extrabold text-pink-700">🌐 Offline Ready</h4>
-              <p className="mt-1 text-sm font-semibold text-pink-600/80">
-                Install the app and study anytime, even without internet!
-              </p>
+              <h4 className="font-extrabold text-pink-700">
+                🌐 Offline Status
+              </h4>
+              {isOfflineReady ? (
+                <p className="mt-1 flex items-center gap-2 text-sm font-bold text-green-600">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
+                  OFFLINE READY — study anytime!
+                </p>
+              ) : (
+                <p className="mt-1 flex items-center gap-2 text-sm font-semibold text-pink-600/80">
+                  <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-yellow-400" />
+                  Preparing offline mode…
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* ─── About / Credits ─── */}
+          <div className="mt-6 rounded-2xl border border-pink-200 bg-pink-50/50 p-5">
+            <h3 className="text-lg font-extrabold text-pink-700">
+              📋 About This App
+            </h3>
+            <p className="mt-2 text-sm font-semibold text-pink-600/80">
+              An interactive flashcard quiz designed to help Grade 5 students
+              master Subject-Verb Agreement in English. Features 40 questions
+              across three difficulty levels with instant feedback, star
+              rewards, and full offline support.
+            </p>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl bg-white p-3 text-center">
+                <p className="text-xs font-bold uppercase text-pink-400">
+                  Proponent
+                </p>
+                <p className="mt-1 text-sm font-extrabold text-pink-800">
+                  STUDENT NAME
+                </p>
+              </div>
+              <div className="rounded-xl bg-white p-3 text-center">
+                <p className="text-xs font-bold uppercase text-pink-400">
+                  Adviser
+                </p>
+                <p className="mt-1 text-sm font-extrabold text-pink-800">
+                  TEACHER NAME
+                </p>
+              </div>
             </div>
           </div>
         </section>

@@ -1,10 +1,12 @@
 {
-  "name": "Fun Flashcards",
+  "name": "Fun Flashcards — Grade 5 Subject-Verb Agreement",
   "short_name": "Flashcards",
   "lang": "en",
-  "description": "Learn and play with fun flashcard quizzes!",
+  "description": "Grade 5 Subject-Verb Agreement flashcards (40 questions) with instant feedback, stars, offline mode, and progress tracking.\n\nProject Details:\nSchool: [School Name]\nTeacher: [Teacher Name]\nStudent/Project Owner: [Student Name]\nDeveloper: Uel",
+
   "start_url": "/",
-  "id": "/",
+
+  "id": "98763221",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
@@ -12,7 +14,14 @@
   "prefer_related_applications": false,
   "background_color": "#fff0f5",
   "theme_color": "#ec4899",
-  "categories": ["education"],
+  "categories": ["education", "kids"],
+  "iarc_rating_id": "",
+  "dir": "ltr",
+
+  "developer": {
+    "name": "Uel",
+    "url": "https://github.com/imueLx/flashcard-app"
+  },
   "icons": [
     {
       "src": "/icon-192.png",
