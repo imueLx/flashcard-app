@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -28,7 +29,7 @@ type WrongAnswer = {
   picked: FlashcardOptionKey;
 };
 
-type PersistedWrongAnswer = {
+type PersistedCardAnswer = {
   cardId: number;
   picked: FlashcardOptionKey;
 };
@@ -36,11 +37,9 @@ type PersistedWrongAnswer = {
 type PersistedQuizState = {
   cardIds: number[];
   activeIndex: number;
-  selectedOption: FlashcardOptionKey | null;
   showBack: boolean;
-  score: number;
   isShuffled: boolean;
-  wrongAnswers: PersistedWrongAnswer[];
+  answersByCard?: PersistedCardAnswer[];
 };
 
 const BACKGROUND_MUSIC_URL = "/audio/background-audio.mp3";
@@ -58,19 +57,18 @@ function QuizContent() {
   const level = normalizeLevel(searchParams.get("level"));
   const levelMeta = flashcardLevelMeta[level];
   const baseCards = getFlashcardsByLevel(level);
-  const quizStateKey = `quiz-state-v1-${level}`;
+  const quizStateKey = `quiz-state-v2-${level}`;
 
   const [isHydrated, setIsHydrated] = useState(false);
   const [cards, setCards] = useState<Flashcard[]>(baseCards);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [selectedOption, setSelectedOption] =
-    useState<FlashcardOptionKey | null>(null);
+  const [answersByCard, setAnswersByCard] = useState<
+    Record<number, FlashcardOptionKey>
+  >({});
   const [showBack, setShowBack] = useState(false);
-  const [score, setScore] = useState(0);
   const [isMusicOn, setIsMusicOn] = useState(false);
   const [isMusicAvailable, setIsMusicAvailable] = useState(true);
   const [isShuffled, setIsShuffled] = useState(false);
-  const [wrongAnswers, setWrongAnswers] = useState<WrongAnswer[]>([]);
   const [showReview, setShowReview] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [starAnimation, setStarAnimation] = useState(false);
@@ -81,12 +79,28 @@ function QuizContent() {
   const touchStartXRef = useRef<number | null>(null);
 
   const activeCard = cards[activeIndex] ?? null;
+  const selectedOption = activeCard
+    ? (answersByCard[activeCard.id] ?? null)
+    : null;
   const isAnswered = selectedOption !== null;
   const isLastCard = activeIndex >= cards.length - 1;
-  const completedCards = activeIndex + (isAnswered ? 1 : 0);
+  const completedCards = cards.filter((card) => answersByCard[card.id]).length;
   const progressPercent =
     cards.length > 0 ? (completedCards / cards.length) * 100 : 0;
   const quizDone = isLastCard && isAnswered;
+  const score = cards.reduce(
+    (total, card) =>
+      answersByCard[card.id] === card.answer ? total + 1 : total,
+    0,
+  );
+  const wrongAnswers: WrongAnswer[] = cards.flatMap((card) => {
+    const picked = answersByCard[card.id];
+    if (!picked || picked === card.answer) {
+      return [];
+    }
+
+    return [{ card, picked }];
+  });
   const masteryPercent = getMasteryPercent(score, cards.length);
   const starsEarned = getStarsEarned(masteryPercent);
   const badge = getBadge(masteryPercent);
@@ -119,9 +133,6 @@ function QuizContent() {
 
   useEffect(() => {
     setIsHydrated(false);
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
-    }
 
     const cardsById = new Map(baseCards.map((card) => [card.id, card]));
 
@@ -144,37 +155,41 @@ function QuizContent() {
 
       const maxIndex = Math.max(deck.length - 1, 0);
       const safeIndex = Math.min(Math.max(saved.activeIndex ?? 0, 0), maxIndex);
-
-      setCards(deck.length > 0 ? deck : getShuffledDeck(baseCards, baseCards));
-      setActiveIndex(safeIndex);
-      setSelectedOption(saved.selectedOption ?? null);
-      setShowBack(Boolean(saved.showBack));
-      setScore(Math.max(saved.score ?? 0, 0));
-      setIsShuffled(Boolean(saved.isShuffled));
-      setWrongAnswers(
-        (saved.wrongAnswers ?? [])
+      const restoredAnswersByCard = Object.fromEntries(
+        (saved.answersByCard ?? [])
           .map((item) => {
             const card = cardsById.get(item.cardId);
             if (!card) {
               return null;
             }
 
-            return {
-              card,
-              picked: item.picked,
-            };
+            return [card.id, item.picked] as const;
           })
-          .filter((item): item is WrongAnswer => Boolean(item)),
+          .filter((entry): entry is readonly [number, FlashcardOptionKey] =>
+            Boolean(entry),
+          ),
+      ) as Record<number, FlashcardOptionKey>;
+
+      const activeCardId = deck[safeIndex]?.id;
+
+      setCards(deck.length > 0 ? deck : getShuffledDeck(baseCards, baseCards));
+      setActiveIndex(safeIndex);
+      setAnswersByCard(restoredAnswersByCard);
+      setShowBack(
+        Boolean(
+          saved.showBack &&
+          typeof activeCardId === "number" &&
+          restoredAnswersByCard[activeCardId],
+        ),
       );
+      setIsShuffled(Boolean(saved.isShuffled));
       setShowReview(false);
       setImageFailed(false);
     } catch {
-      setSelectedOption(null);
+      setAnswersByCard({});
       setShowBack(false);
       setCards((previousCards) => getShuffledDeck(baseCards, previousCards));
       setActiveIndex(0);
-      setScore(0);
-      setWrongAnswers([]);
       setShowReview(false);
       setIsShuffled(true);
       setImageFailed(false);
@@ -192,13 +207,11 @@ function QuizContent() {
     const state: PersistedQuizState = {
       cardIds: cards.map((card) => card.id),
       activeIndex,
-      selectedOption,
       showBack,
-      score,
       isShuffled,
-      wrongAnswers: wrongAnswers.map((item) => ({
-        cardId: item.card.id,
-        picked: item.picked,
+      answersByCard: Object.entries(answersByCard).map(([cardId, picked]) => ({
+        cardId: Number(cardId),
+        picked,
       })),
     };
 
@@ -206,13 +219,11 @@ function QuizContent() {
   }, [
     activeIndex,
     cards,
+    answersByCard,
     isHydrated,
     isShuffled,
     quizStateKey,
-    score,
-    selectedOption,
     showBack,
-    wrongAnswers,
   ]);
 
   useEffect(() => {
@@ -255,17 +266,14 @@ function QuizContent() {
   function answer(option: FlashcardOptionKey) {
     if (!activeCard || isAnswered) return;
     const correct = option === activeCard.answer;
-    setSelectedOption(option);
+    setAnswersByCard((previousAnswers) => ({
+      ...previousAnswers,
+      [activeCard.id]: option,
+    }));
     setShowBack(true);
     if (correct) {
-      setScore((c) => c + 1);
       setStarAnimation(true);
       setTimeout(() => setStarAnimation(false), 600);
-    } else {
-      setWrongAnswers((prev) => [
-        ...prev,
-        { card: activeCard, picked: option },
-      ]);
     }
     // Show confetti on last correct answer for perfect score
     if (correct && isLastCard && score + 1 === cards.length) {
@@ -277,23 +285,19 @@ function QuizContent() {
   function nextCard() {
     if (!isAnswered || isLastCard) return;
     setActiveIndex((c) => c + 1);
-    setSelectedOption(null);
     setShowBack(false);
   }
 
   function prevCard() {
     if (activeIndex === 0) return;
     setActiveIndex((c) => c - 1);
-    setSelectedOption(null);
     setShowBack(false);
   }
 
   function restart() {
     setActiveIndex(0);
-    setSelectedOption(null);
+    setAnswersByCard({});
     setShowBack(false);
-    setScore(0);
-    setWrongAnswers([]);
     setShowReview(false);
     setShowConfetti(false);
     if (isShuffled) {
@@ -305,10 +309,8 @@ function QuizContent() {
     localStorage.removeItem(quizStateKey);
     setCards(getShuffledDeck(baseCards, baseCards));
     setActiveIndex(0);
-    setSelectedOption(null);
+    setAnswersByCard({});
     setShowBack(false);
-    setScore(0);
-    setWrongAnswers([]);
     setIsShuffled(true);
     setShowReview(false);
     setShowConfetti(false);
@@ -372,7 +374,7 @@ function QuizContent() {
           <h1 className="mt-4 text-2xl font-black text-pink-800">
             No Cards Available
           </h1>
-          <p className="mt-2 text-sm font-semibold text-pink-600/80">
+          <p className="mt-2 text-sm font-semibold text-pink-700">
             The flashcard data couldn&apos;t load. This may happen if the app
             hasn&apos;t finished caching for offline use.
           </p>
@@ -461,7 +463,7 @@ function QuizContent() {
                       </div>
                     </div>
                     {w.card.explanation && (
-                      <p className="mt-3 rounded-xl bg-white p-3 text-sm font-semibold text-pink-700/80">
+                      <p className="mt-3 rounded-xl bg-white p-3 text-sm font-semibold text-pink-700">
                         💡 {w.card.explanation}
                       </p>
                     )}
@@ -522,7 +524,7 @@ function QuizContent() {
             >
               ← Home
             </Link>
-            <p className="min-w-0 truncate rounded-full bg-pink-100 px-2.5 py-1 text-[11px] font-extrabold text-pink-600 sm:px-3 sm:text-sm">
+            <p className="min-w-0 truncate rounded-full bg-pink-100 px-2.5 py-1 text-[11px] font-extrabold text-pink-800 sm:px-3 sm:text-sm">
               {levelMeta.label} • {Math.min(activeIndex + 1, cards.length)}/
               {cards.length}
               {isShuffled && " 🔀"}
@@ -558,7 +560,7 @@ function QuizContent() {
             <h1 className="text-lg font-black text-pink-800 sm:text-3xl">
               {levelMeta.label} Level
             </h1>
-            <span className="hidden rounded-full border-2 border-pink-300 bg-pink-100 px-3 py-1 text-xs font-extrabold uppercase tracking-wide text-pink-600 sm:inline-block sm:text-sm">
+            <span className="hidden rounded-full border-2 border-pink-300 bg-pink-100 px-3 py-1 text-xs font-extrabold uppercase tracking-wide text-pink-800 sm:inline-block sm:text-sm">
               Grade 5 English
             </span>
           </div>
@@ -571,7 +573,7 @@ function QuizContent() {
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
-            <span className="text-[11px] font-bold text-pink-500 sm:text-xs">
+            <span className="text-[11px] font-bold text-pink-700 sm:text-xs">
               {Math.round(progressPercent)}%
             </span>
           </div>
@@ -602,11 +604,11 @@ function QuizContent() {
               >
                 {/* Card face label */}
                 <div className="mb-2 flex items-center justify-between sm:mb-5">
-                  <p className="rounded-full bg-pink-100 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-pink-600 sm:px-3 sm:py-1 sm:text-xs">
+                  <p className="rounded-full bg-pink-100 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-pink-800 sm:px-3 sm:py-1 sm:text-xs">
                     {showBack ? "✨ Answer" : "📖 Question"}
                   </p>
                   {isAnswered && (
-                    <span className="text-[10px] font-semibold text-pink-400 sm:text-xs">
+                    <span className="text-[10px] font-semibold text-pink-700 sm:text-xs">
                       Tap or swipe to flip
                     </span>
                   )}
@@ -618,7 +620,7 @@ function QuizContent() {
                       <p className="text-2xl font-black text-pink-800">
                         No cards found
                       </p>
-                      <p className="mt-2 text-sm font-semibold text-pink-500">
+                      <p className="mt-2 text-sm font-semibold text-pink-700">
                         Please pick another level.
                       </p>
                     </div>
@@ -627,20 +629,20 @@ function QuizContent() {
                   <>
                     <div className="mb-3 grid min-h-20 place-items-center rounded-2xl border-2 border-dashed border-pink-300 bg-pink-50 p-2 text-center sm:mb-4 sm:min-h-28 sm:p-3">
                       {activeCard.imageSrc && !imageFailed ? (
-                        <img
+                        <Image
                           src={activeCard.imageSrc}
                           alt={`Question ${activeCard.id} illustration`}
                           width={640}
                           height={360}
-                          loading="lazy"
-                          decoding="async"
+                          sizes="(max-width: 640px) 100vw, 640px"
+                          priority={activeIndex === 0}
                           onError={() => setImageFailed(true)}
                           className="h-28 w-full rounded-xl object-contain sm:h-40"
                         />
                       ) : (
                         <div>
                           <p className="text-3xl">🖼️</p>
-                          <p className="mt-1 text-xs font-bold uppercase tracking-wide text-pink-400">
+                          <p className="mt-1 text-xs font-bold uppercase tracking-wide text-pink-700">
                             Add image: /images/flashcards/{activeCard.id}.webp
                           </p>
                         </div>
@@ -681,7 +683,7 @@ function QuizContent() {
                               isAnswered ? "cursor-default" : "cursor-pointer"
                             } ${isAnswered && isCorrect ? "animate-pop-in" : ""} ${isAnswered && isPicked && !isCorrect ? "animate-shake" : ""}`}
                           >
-                            <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-pink-100 text-xs font-black uppercase text-pink-600 sm:mr-3 sm:h-7 sm:w-7 sm:text-sm">
+                            <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-pink-100 text-xs font-black uppercase text-pink-800 sm:mr-3 sm:h-7 sm:w-7 sm:text-sm">
                               {optionKey}
                             </span>
                             {value}
@@ -697,7 +699,7 @@ function QuizContent() {
                     </div>
 
                     {!isAnswered && (
-                      <p className="mt-2 text-xs font-semibold text-pink-400 sm:mt-5 sm:text-sm">
+                      <p className="mt-2 text-xs font-semibold text-pink-700 sm:mt-5 sm:text-sm">
                         Pick an answer ✨
                       </p>
                     )}
@@ -745,7 +747,7 @@ function QuizContent() {
                       )}
                     </div>
 
-                    <p className="text-xs font-semibold text-pink-400 sm:text-sm">
+                    <p className="text-xs font-semibold text-pink-700 sm:text-sm">
                       Flip to see question, or Next →
                     </p>
                   </div>
@@ -785,7 +787,7 @@ function QuizContent() {
             <button
               type="button"
               onClick={() => setShowResetConfirm(true)}
-              className="mt-2 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-xs font-semibold text-pink-400 transition hover:bg-pink-50 hover:text-pink-600 sm:text-sm"
+              className="mt-2 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-xs font-semibold text-pink-700 transition hover:bg-pink-50 hover:text-pink-800 sm:text-sm"
             >
               🗑️ Reset Progress & Shuffle
             </button>
@@ -797,7 +799,7 @@ function QuizContent() {
                 <h3 className="text-lg font-black text-pink-800 sm:text-xl">
                   Reset progress?
                 </h3>
-                <p className="mt-2 text-sm font-semibold text-pink-600/80">
+                <p className="mt-2 text-sm font-semibold text-pink-700">
                   This will clear your saved progress for this level and
                   reshuffle the cards.
                 </p>
@@ -848,11 +850,11 @@ function QuizContent() {
 
               {/* Score */}
               <div className="mt-4 rounded-2xl border-2 border-pink-200 bg-white p-4">
-                <p className="text-sm font-bold text-pink-500">Mastery Score</p>
+                <p className="text-sm font-bold text-pink-700">Mastery Score</p>
                 <p className="mt-1 text-4xl font-black text-pink-700">
                   {masteryPercent}%
                 </p>
-                <p className="mt-1 text-sm font-semibold text-pink-500">
+                <p className="mt-1 text-sm font-semibold text-pink-700">
                   {score} out of {cards.length} correct
                 </p>
               </div>

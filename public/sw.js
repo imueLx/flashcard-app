@@ -1,11 +1,17 @@
-const CACHE_NAME = "fun-flashcards-v6";
+const CACHE_NAME = "blushcards-grammar-fun-v13";
+const RUNTIME_CACHE_NAME = `${CACHE_NAME}-runtime`;
+const MAX_RUNTIME_ENTRIES = 200;
 const STATIC_APP_SHELL = [
   "/",
   "/quiz",
   "/manifest.webmanifest",
-  "/icon-192.png",
-  "/icon-512.png",
-  "/apple-touch-icon.png",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-192.png",
+  "/icons/icon-maskable-512.png",
+  "/icons/apple-touch-icon.png",
+  "/icons/favicon-32.png",
+  "/logo-with-name/android-chrome-512x512.png",
   "/screenshots/home-narrow.png",
   "/screenshots/quiz-wide.png",
   "/audio/background-audio.mp3",
@@ -26,6 +32,23 @@ function getFlashcardImageCandidates() {
 }
 
 const ASSET_URL_PATTERN = /(?:src|href)=["']([^"']+)["']/g;
+
+async function trimCache(cacheName, maxEntries) {
+  const cache = await caches.open(cacheName);
+  const requests = await cache.keys();
+  if (requests.length <= maxEntries) {
+    return;
+  }
+
+  const requestsToDelete = requests.slice(0, requests.length - maxEntries);
+  await Promise.all(requestsToDelete.map((request) => cache.delete(request)));
+}
+
+async function putInRuntimeCache(request, response) {
+  const cache = await caches.open(RUNTIME_CACHE_NAME);
+  await cache.put(request, response);
+  await trimCache(RUNTIME_CACHE_NAME, MAX_RUNTIME_ENTRIES);
+}
 
 async function precacheUrls(cache, urls) {
   await Promise.all(
@@ -93,7 +116,6 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE_NAME);
-
       await precacheUrls(cache, STATIC_APP_SHELL);
       await precacheUrls(cache, getFlashcardImageCandidates());
       await Promise.all(
@@ -124,6 +146,10 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const url = new URL(event.request.url);
+
+  if (url.origin !== self.location.origin) {
+    return;
+  }
 
   // Navigation requests — network-first, fallback to cached shell
   if (event.request.mode === "navigate") {
@@ -169,6 +195,28 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Next.js image optimizer requests — cache-first for offline image reuse
+  if (url.pathname.startsWith("/_next/image")) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) {
+          return cached;
+        }
+
+        return fetch(event.request)
+          .then((response) => {
+            if (response.ok) {
+              const clone = response.clone();
+              putInRuntimeCache(event.request, clone);
+            }
+            return response;
+          })
+          .catch(() => cached || new Response("", { status: 503 }));
+      }),
+    );
+    return;
+  }
+
   if (url.pathname.startsWith("/images/flashcards/")) {
     event.respondWith(
       caches.match(event.request).then((cached) => {
@@ -180,9 +228,7 @@ self.addEventListener("fetch", (event) => {
           .then((response) => {
             if (response.ok) {
               const clone = response.clone();
-              caches
-                .open(CACHE_NAME)
-                .then((cache) => cache.put(event.request, clone));
+              putInRuntimeCache(event.request, clone);
             }
 
             return response;
@@ -204,9 +250,7 @@ self.addEventListener("fetch", (event) => {
           .then((response) => {
             if (response.ok) {
               const clone = response.clone();
-              caches
-                .open(CACHE_NAME)
-                .then((cache) => cache.put(event.request, clone));
+              putInRuntimeCache(event.request, clone);
             }
 
             return response;
@@ -224,9 +268,7 @@ self.addEventListener("fetch", (event) => {
         .then((response) => {
           if (response.ok) {
             const clone = response.clone();
-            caches
-              .open(CACHE_NAME)
-              .then((cache) => cache.put(event.request, clone));
+            putInRuntimeCache(event.request, clone);
           }
           return response;
         })

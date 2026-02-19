@@ -1,12 +1,12 @@
 {
-  "name": "Fun Flashcards — Grade 5 Subject-Verb Agreement",
-  "short_name": "Flashcards",
+  "name": "BlushCards: Grammar Fun",
+  "short_name": "BlushCards",
   "lang": "en",
-  "description": "Grade 5 Subject-Verb Agreement flashcards (40 questions) with instant feedback, stars, offline mode, and progress tracking.\n\nProject Details:\nSchool: [School Name]\nTeacher: [Teacher Name]\nStudent/Project Owner: [Student Name]\nDeveloper: Uel",
+  "description": "BlushCards: Grammar Fun is a Grade 5 Subject-Verb Agreement flashcard app with instant feedback, stars, offline mode, and progress tracking.\n\nProject Details:\nAdviser: Mr. Chael Villareal\nProject By: Ma. Marella N. Reodeque\nSchool: St. Anne Collage Lucena, Inc.",
 
   "start_url": "/",
 
-  "id": "98763221",
+  "id": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
@@ -19,24 +19,71 @@
   "dir": "ltr",
 
   "developer": {
-    "name": "Uel",
-    "url": "https://github.com/imueLx/flashcard-app"
+    "name": "Uel"
   },
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/icons/icon-48.png",
+      "sizes": "48x48",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icons/icon-256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -45,17 +92,19 @@
   "screenshots": [
     {
       "src": "/screenshots/home-narrow.png",
-      "sizes": "1080x1920",
+      "sizes": "412x894",
       "type": "image/png",
       "form_factor": "narrow",
       "label": "Home screen"
     },
     {
       "src": "/screenshots/quiz-wide.png",
-      "sizes": "1366x768",
+      "sizes": "1229x1060",
       "type": "image/png",
       "form_factor": "wide",
       "label": "Quiz screen"
     }
-  ]
+  ],
+  "related_applications": [],
+  "handle_links": "preferred"
 }
