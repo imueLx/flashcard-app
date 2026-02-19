@@ -77,6 +77,7 @@ function QuizContent() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const touchStartXRef = useRef<number | null>(null);
+  const preloadedImageSrcRef = useRef<Set<string>>(new Set());
 
   const activeCard = cards[activeIndex] ?? null;
   const selectedOption = activeCard
@@ -229,6 +230,38 @@ function QuizContent() {
   useEffect(() => {
     setImageFailed(false);
   }, [activeIndex]);
+
+  useEffect(() => {
+    if (!isHydrated || cards.length === 0) {
+      return;
+    }
+
+    const preloadImage = (src?: string) => {
+      if (!src || preloadedImageSrcRef.current.has(src)) {
+        return;
+      }
+
+      preloadedImageSrcRef.current.add(src);
+      const preloadTarget = new window.Image();
+      preloadTarget.decoding = "async";
+      preloadTarget.src = src;
+    };
+
+    const candidateIndexes = [
+      activeIndex,
+      activeIndex + 1,
+      activeIndex + 2,
+      activeIndex - 1,
+    ];
+
+    candidateIndexes.forEach((index) => {
+      if (index < 0 || index >= cards.length) {
+        return;
+      }
+
+      preloadImage(cards[index]?.imageSrc);
+    });
+  }, [activeIndex, cards, isHydrated]);
 
   useEffect(() => {
     const audio = new Audio(BACKGROUND_MUSIC_URL);
@@ -635,6 +668,9 @@ function QuizContent() {
                           width={640}
                           height={360}
                           sizes="(max-width: 640px) 100vw, 640px"
+                          unoptimized
+                          loading="eager"
+                          fetchPriority="high"
                           priority={activeIndex === 0}
                           onError={() => setImageFailed(true)}
                           className="h-28 w-full rounded-xl object-contain sm:h-40"
