@@ -39,10 +39,16 @@ type PersistedQuizState = {
   activeIndex: number;
   showBack: boolean;
   isShuffled: boolean;
+  savedAt: number;
   answersByCard?: PersistedCardAnswer[];
 };
 
 const BACKGROUND_MUSIC_URL = "/audio/background-audio.mp3";
+const QUIZ_STATE_TTL_MS = 10 * 60 * 1000;
+
+function formatQuestionBlank(text: string) {
+  return text.replace(/_/g, "_______");
+}
 
 export default function QuizPage() {
   return (
@@ -144,6 +150,14 @@ function QuizContent() {
       }
 
       const saved = JSON.parse(raw) as PersistedQuizState;
+      if (
+        typeof saved.savedAt !== "number" ||
+        Date.now() - saved.savedAt > QUIZ_STATE_TTL_MS
+      ) {
+        localStorage.removeItem(quizStateKey);
+        throw new Error("saved-state-expired");
+      }
+
       const restoredCards = saved.cardIds
         .map((id) => cardsById.get(id))
         .filter((card): card is Flashcard => Boolean(card));
@@ -210,6 +224,7 @@ function QuizContent() {
       activeIndex,
       showBack,
       isShuffled,
+      savedAt: Date.now(),
       answersByCard: Object.entries(answersByCard).map(([cardId, picked]) => ({
         cardId: Number(cardId),
         picked,
@@ -470,7 +485,7 @@ function QuizContent() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-base font-black text-pink-800">
-                        Q{i + 1}: {w.card.front}
+                        Q{i + 1}: {formatQuestionBlank(w.card.front)}
                       </p>
                       <span className="shrink-0 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-600">
                         ✗ Wrong
@@ -687,7 +702,7 @@ function QuizContent() {
 
                     {/* Question */}
                     <p className="text-lg font-black leading-snug text-pink-900 sm:text-3xl">
-                      {activeCard.front}
+                      {formatQuestionBlank(activeCard.front)}
                     </p>
 
                     {/* Options */}
