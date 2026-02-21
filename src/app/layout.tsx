@@ -90,6 +90,54 @@ export default function RootLayout({
             (function () {
               if (typeof window === 'undefined') return;
 
+              var ua = window.navigator.userAgent || '';
+              var isMessengerInApp = /FBAN|FBAV|FB_IAB|FB4A|Messenger/i.test(ua);
+              var isIOS = /iPhone|iPad|iPod/i.test(ua);
+              var isAndroid = /Android/i.test(ua);
+              var isStandalone =
+                window.matchMedia('(display-mode: standalone)').matches ||
+                window.navigator.standalone === true;
+
+              if (isMessengerInApp && !isStandalone) {
+                var skipPrompt = false;
+
+                try {
+                  skipPrompt = window.sessionStorage.getItem('__external_browser_prompted__') === '1';
+                } catch (_) {}
+
+                if (!skipPrompt) {
+                  try {
+                    window.sessionStorage.setItem('__external_browser_prompted__', '1');
+                  } catch (_) {}
+
+                  if (isAndroid) {
+                    var shouldOpenChrome = window.confirm(
+                      'For best performance and reliable offline mode, open this app in Chrome?'
+                    );
+
+                    if (shouldOpenChrome) {
+                      var fallbackUrl = window.location.href;
+                      var intentUrl =
+                        'intent://' +
+                        window.location.host +
+                        window.location.pathname +
+                        window.location.search +
+                        window.location.hash +
+                        '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' +
+                        encodeURIComponent(fallbackUrl) +
+                        ';end';
+
+                      window.location.replace(intentUrl);
+                      return;
+                    }
+                  } else if (isIOS) {
+                    window.alert(
+                      'For best performance and offline support, open this app in Safari. Tap the menu (•••) in Messenger and choose Open in Browser.'
+                    );
+                  }
+                }
+              }
+
               window.__deferredInstallPrompt = window.__deferredInstallPrompt || null;
 
               window.addEventListener('beforeinstallprompt', function (event) {

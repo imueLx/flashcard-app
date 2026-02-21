@@ -224,7 +224,9 @@ export default function Home() {
 
   async function installApp() {
     if (!window.isSecureContext) {
-      setInstallHint("Install requires HTTPS (or localhost).");
+      setInstallHint(
+        "To install the app, open this on a secure link (https). Ask a parent or teacher for help.",
+      );
       return;
     }
 
@@ -237,16 +239,16 @@ export default function Home() {
         (window as WindowWithInstallPrompt).__deferredInstallPrompt = null;
         setCanPromptInstall(false);
         setIsInstalled(true);
-        setInstallHint("Installed successfully 🎉");
+        setInstallHint("Awesome! BlushCards is now on your home screen 🎉");
       } else {
-        setInstallHint("Install was canceled. You can try again anytime.");
+        setInstallHint("No problem! You can tap Install App again anytime.");
       }
       return;
     }
 
     if (platformRef.current !== "ios") {
       setIsPreparingInstall(true);
-      setInstallHint("Preparing install dialog...");
+      setInstallHint("Getting your install button ready...");
       const becameAvailable = await waitForNativeInstallPrompt();
       setIsPreparingInstall(false);
 
@@ -259,16 +261,18 @@ export default function Home() {
           (window as WindowWithInstallPrompt).__deferredInstallPrompt = null;
           setCanPromptInstall(false);
           setIsInstalled(true);
-          setInstallHint("Installed successfully 🎉");
+          setInstallHint("Awesome! BlushCards is now on your home screen 🎉");
         } else {
-          setInstallHint("Install was canceled. You can try again anytime.");
+          setInstallHint("No problem! You can tap Install App again anytime.");
         }
         return;
       }
     }
 
     if (platformRef.current !== "ios" && !canPromptInstall) {
-      setInstallHint("Install dialog isn't available on this browser session.");
+      setInstallHint(
+        "I can't show the install pop-up here, so follow the steps below.",
+      );
     }
 
     const platform = platformRef.current;
@@ -280,13 +284,13 @@ export default function Home() {
 
     if (platform === "android") {
       setInstallHint(
-        'Tap your browser menu (⋮) at the top-right, then choose "Install app" or "Add to Home screen".',
+        'Android steps: tap menu (⋮) in your browser, then tap "Install app" or "Add to Home screen".',
       );
       return;
     }
 
     setInstallHint(
-      "In Chrome/Edge: click the install icon (⊕) in the address bar, or use the browser menu → Install app.",
+      'Computer steps: in Chrome or Edge, click the install icon (⊕) in the address bar, or open menu → "Install app".',
     );
   }
 
@@ -313,10 +317,10 @@ export default function Home() {
           >
             <span className="text-2xl">📲</span>
             {isPreparingInstall
-              ? "Checking install..."
+              ? "Getting Ready..."
               : canPromptInstall
-                ? "Install App Now"
-                : "Install App"}
+                ? "Install App ⭐"
+                : "How to Install 📲"}
           </button>
           {installHint && (
             <p className="mt-2 text-center text-sm font-semibold text-pink-700">
@@ -330,17 +334,22 @@ export default function Home() {
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-pink-900/40 px-4 pb-6 sm:items-center sm:pb-0">
           <div className="w-full max-w-sm animate-slide-up rounded-3xl border-2 border-pink-200 bg-white p-5 shadow-2xl sm:p-6">
             <h3 className="text-lg font-black text-pink-800">
-              Install on iPhone / iPad
+              Install on iPhone / iPad 📱
             </h3>
+            <p className="mt-2 text-sm font-semibold text-pink-700">
+              Follow these easy steps. You can ask a parent, guardian, or
+              teacher to help.
+            </p>
             <div className="mt-4 space-y-3">
               <div className="flex items-start gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-pink-500 text-xs font-black text-white">
                   1
                 </span>
                 <p className="text-sm font-semibold text-pink-700">
-                  Tap the <strong>Share</strong> button{" "}
+                  Open this page in <strong>Safari</strong>, then tap the{" "}
+                  <strong>Share</strong> button{" "}
                   <span className="inline-block text-lg leading-none">⎋</span>{" "}
-                  at the bottom of Safari.
+                  at the bottom.
                 </p>
               </div>
               <div className="flex items-start gap-3">
@@ -357,7 +366,8 @@ export default function Home() {
                   3
                 </span>
                 <p className="text-sm font-semibold text-pink-700">
-                  Tap <strong>&quot;Add&quot;</strong> to install BlushCards.
+                  Tap <strong>&quot;Add&quot;</strong>. Done! You can open
+                  BlushCards from your home screen.
                 </p>
               </div>
             </div>
