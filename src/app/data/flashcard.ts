@@ -27,17 +27,17 @@ export const flashcardLevelMeta: Record<
 > = {
   easy: {
     label: "Easy",
-    subtitle: "1 to 5 items",
+    subtitle: "5 questions",
     itemCount: 5,
   },
   medium: {
     label: "Medium",
-    subtitle: "1 to 10 items",
+    subtitle: "10 questions",
     itemCount: 10,
   },
   hard: {
     label: "Hard",
-    subtitle: "1 to 15 items",
+    subtitle: "15 questions",
     itemCount: 15,
   },
 };

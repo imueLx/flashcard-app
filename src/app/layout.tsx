@@ -1,6 +1,14 @@
 import type { Metadata } from "next";
+import { Nunito } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
+
+const nunito = Nunito({
+  subsets: ["latin"],
+  weight: ["400", "600", "700", "800", "900"],
+  display: "swap",
+  variable: "--font-nunito",
+});
 
 const appUrl =
   process.env.NEXT_PUBLIC_APP_URL ?? "https://flashcard-app-g5.vercel.app";
@@ -75,8 +83,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="antialiased">
+    <html lang="en" className={nunito.variable}>
+      <body className={`${nunito.className} antialiased`}>
         <Script id="pwa-install-capture" strategy="beforeInteractive">
           {`
             (function () {

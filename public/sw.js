@@ -1,8 +1,9 @@
-const CACHE_NAME = "blushcards-grammar-fun-v13";
+const CACHE_NAME = "blushcards-grammar-fun-v14";
 const RUNTIME_CACHE_NAME = `${CACHE_NAME}-runtime`;
 const MAX_RUNTIME_ENTRIES = 200;
 const STATIC_APP_SHELL = [
   "/",
+  "/levels",
   "/quiz",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
@@ -19,6 +20,7 @@ const STATIC_APP_SHELL = [
 
 const ROUTES_TO_WARM = [
   "/",
+  "/levels",
   "/quiz",
   "/quiz?level=easy",
   "/quiz?level=medium",

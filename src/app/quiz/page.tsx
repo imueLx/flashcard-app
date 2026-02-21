@@ -23,6 +23,16 @@ import {
   shuffleCards,
   type Flashcard,
 } from "../data/flashcard";
+import {
+  createDefaultLevelProgress,
+  getRequiredScore,
+  getUnlockRequirement,
+  isLevelUnlocked,
+  isPassed,
+  readLevelProgress,
+  recordLevelAttempt,
+  type LevelProgressMap,
+} from "../data/level-progress";
 
 type WrongAnswer = {
   card: Flashcard;
@@ -41,6 +51,7 @@ type PersistedQuizState = {
   isShuffled: boolean;
   savedAt: number;
   answersByCard?: PersistedCardAnswer[];
+  attemptRecorded?: boolean;
 };
 
 const BACKGROUND_MUSIC_URL = "/audio/background-audio.mp3";
@@ -64,8 +75,13 @@ function QuizContent() {
   const levelMeta = flashcardLevelMeta[level];
   const baseCards = getFlashcardsByLevel(level);
   const quizStateKey = `quiz-state-v2-${level}`;
+  const [isAttemptRecorded, setIsAttemptRecorded] = useState(false);
 
   const [isHydrated, setIsHydrated] = useState(false);
+  const [levelProgress, setLevelProgress] = useState<LevelProgressMap>(
+    createDefaultLevelProgress,
+  );
+  const [isLevelProgressReady, setIsLevelProgressReady] = useState(false);
   const [cards, setCards] = useState<Flashcard[]>(baseCards);
   const [activeIndex, setActiveIndex] = useState(0);
   const [answersByCard, setAnswersByCard] = useState<
@@ -84,6 +100,14 @@ function QuizContent() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const touchStartXRef = useRef<number | null>(null);
   const preloadedImageSrcRef = useRef<Set<string>>(new Set());
+  const completionPersistedRef = useRef(false);
+
+  const levelUnlocked = isLevelProgressReady
+    ? isLevelUnlocked(levelProgress, level)
+    : true;
+  const unlockRequirement = getUnlockRequirement(level);
+  const unlockTarget =
+    level === "easy" ? "medium" : level === "medium" ? "hard" : null;
 
   const activeCard = cards[activeIndex] ?? null;
   const selectedOption = activeCard
@@ -111,6 +135,13 @@ function QuizContent() {
   const masteryPercent = getMasteryPercent(score, cards.length);
   const starsEarned = getStarsEarned(masteryPercent);
   const badge = getBadge(masteryPercent);
+  const passingScore = getRequiredScore(cards.length);
+  const didPassCurrentRun = isPassed(score, cards.length);
+
+  useEffect(() => {
+    setLevelProgress(readLevelProgress());
+    setIsLevelProgressReady(true);
+  }, []);
 
   function hasSameOrder(first: Flashcard[], second: Flashcard[]): boolean {
     if (first.length !== second.length) {
@@ -139,6 +170,10 @@ function QuizContent() {
   }
 
   useEffect(() => {
+    if (!isLevelProgressReady || !levelUnlocked) {
+      return;
+    }
+
     setIsHydrated(false);
 
     const cardsById = new Map(baseCards.map((card) => [card.id, card]));
@@ -197,6 +232,7 @@ function QuizContent() {
           restoredAnswersByCard[activeCardId],
         ),
       );
+      setIsAttemptRecorded(Boolean(saved.attemptRecorded));
       setIsShuffled(Boolean(saved.isShuffled));
       setShowReview(false);
       setImageFailed(false);
@@ -207,15 +243,16 @@ function QuizContent() {
       setActiveIndex(0);
       setShowReview(false);
       setIsShuffled(true);
+      setIsAttemptRecorded(false);
       setImageFailed(false);
     }
 
     setIsHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [level]);
+  }, [isLevelProgressReady, level, levelUnlocked]);
 
   useEffect(() => {
-    if (!isHydrated) {
+    if (!isHydrated || !levelUnlocked) {
       return;
     }
 
@@ -229,6 +266,7 @@ function QuizContent() {
         cardId: Number(cardId),
         picked,
       })),
+      attemptRecorded: isAttemptRecorded,
     };
 
     localStorage.setItem(quizStateKey, JSON.stringify(state));
@@ -237,9 +275,51 @@ function QuizContent() {
     cards,
     answersByCard,
     isHydrated,
+    isAttemptRecorded,
     isShuffled,
+    levelUnlocked,
     quizStateKey,
     showBack,
+  ]);
+
+  useEffect(() => {
+    if (!isLevelProgressReady || !levelUnlocked) {
+      completionPersistedRef.current = false;
+      return;
+    }
+
+    if (!quizDone) {
+      completionPersistedRef.current = false;
+      return;
+    }
+
+    if (completionPersistedRef.current) {
+      return;
+    }
+
+    if (isAttemptRecorded) {
+      completionPersistedRef.current = true;
+      return;
+    }
+
+    const updated = recordLevelAttempt(
+      levelProgress,
+      level,
+      score,
+      cards.length,
+    );
+    setLevelProgress(updated);
+    setIsAttemptRecorded(true);
+    completionPersistedRef.current = true;
+  }, [
+    cards.length,
+    isAttemptRecorded,
+    isLevelProgressReady,
+    level,
+    levelProgress,
+    levelUnlocked,
+    quizDone,
+    score,
   ]);
 
   useEffect(() => {
@@ -348,6 +428,7 @@ function QuizContent() {
     setShowBack(false);
     setShowReview(false);
     setShowConfetti(false);
+    setIsAttemptRecorded(false);
     if (isShuffled) {
       setCards((previousCards) => getShuffledDeck(baseCards, previousCards));
     }
@@ -362,6 +443,7 @@ function QuizContent() {
     setIsShuffled(true);
     setShowReview(false);
     setShowConfetti(false);
+    setIsAttemptRecorded(false);
     setImageFailed(false);
   }
 
@@ -411,6 +493,73 @@ function QuizContent() {
     }
   }
 
+  if (!isLevelProgressReady) return <QuizLoadingShell />;
+
+  if (!levelUnlocked) {
+    const requiredLevel = unlockRequirement
+      ? flashcardLevelMeta[unlockRequirement]
+      : null;
+    const requiredProgress = unlockRequirement
+      ? levelProgress[unlockRequirement]
+      : null;
+    const requiredScore = requiredLevel
+      ? getRequiredScore(requiredLevel.itemCount)
+      : 0;
+
+    return (
+      <div className="safe-area-content flex min-h-screen items-center justify-center bg-background px-4 py-8 text-foreground">
+        <div className="w-full max-w-md rounded-3xl border-2 border-pink-200 bg-white p-5 text-center shadow-xl sm:p-6">
+          <p className="text-5xl">🔒</p>
+          <h1 className="mt-3 text-2xl font-black text-pink-800 sm:text-3xl">
+            {levelMeta.label} Level Locked
+          </h1>
+          {requiredLevel ? (
+            <p className="mt-2 rounded-2xl bg-pink-50 px-4 py-3 text-sm font-bold text-pink-700">
+              Pass <span className="font-black">{requiredLevel.label}</span>{" "}
+              first with at least{" "}
+              <span className="font-black">
+                {requiredScore}/{requiredLevel.itemCount}
+              </span>
+              .
+            </p>
+          ) : (
+            <p className="mt-2 text-sm font-semibold text-pink-700">
+              Complete previous levels first.
+            </p>
+          )}
+
+          {requiredLevel && requiredProgress && (
+            <div className="mt-3 rounded-2xl border-2 border-pink-200 bg-white p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-pink-600">
+                Your best in {requiredLevel.label}
+              </p>
+              <p className="mt-1 text-2xl font-black text-pink-700">
+                {requiredProgress.bestScore}/{requiredLevel.itemCount}
+              </p>
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-col gap-3">
+            {requiredLevel && unlockRequirement && (
+              <Link
+                href={`/quiz?level=${unlockRequirement}`}
+                className="inline-flex min-h-11.5 items-center justify-center rounded-2xl bg-pink-500 px-6 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:bg-pink-600 active:scale-[0.99]"
+              >
+                Play {requiredLevel.label} Now ▶
+              </Link>
+            )}
+            <Link
+              href="/levels"
+              className="inline-flex min-h-11.5 items-center justify-center rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3.5 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99]"
+            >
+              ← All Levels
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!isHydrated) return <QuizLoadingShell />;
 
   // ─── Offline / empty data fallback ───
@@ -430,15 +579,15 @@ function QuizContent() {
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="rounded-2xl bg-pink-500 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:bg-pink-600"
+              className="min-h-11.5 rounded-2xl bg-pink-500 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:bg-pink-600 active:scale-[0.99]"
             >
               Try Again 🔄
             </button>
             <Link
-              href="/"
-              className="rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+              href="/levels"
+              className="inline-flex min-h-11.5 items-center justify-center rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99]"
             >
-              ← Back to Home
+              ← All Levels
             </Link>
           </div>
         </div>
@@ -459,7 +608,7 @@ function QuizContent() {
               <button
                 type="button"
                 onClick={() => setShowReview(false)}
-                className="rounded-2xl bg-pink-500 px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-pink-600"
+                className="min-h-11 rounded-2xl bg-pink-500 px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-pink-600 active:scale-[0.99]"
               >
                 ← Back to Results
               </button>
@@ -524,15 +673,15 @@ function QuizContent() {
               <button
                 type="button"
                 onClick={restart}
-                className="rounded-2xl bg-linear-to-r from-pink-500 to-pink-400 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:-translate-y-0.5"
+                className="inline-flex min-h-11.5 items-center justify-center rounded-2xl bg-linear-to-r from-pink-500 to-pink-400 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:-translate-y-0.5 active:scale-[0.99]"
               >
                 Try Again 🔄
               </button>
               <Link
-                href="/"
-                className="rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+                href="/levels"
+                className="inline-flex min-h-11.5 items-center justify-center rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99]"
               >
-                Home 🏠
+                All Levels 📚
               </Link>
             </div>
           </div>
@@ -567,12 +716,12 @@ function QuizContent() {
         <header className="mb-3 rounded-2xl border-2 border-pink-200 bg-white px-3 py-2 shadow-sm sm:mb-6 sm:rounded-3xl sm:px-4 sm:py-3">
           <div className="flex items-center justify-between gap-2">
             <Link
-              href="/"
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-pink-500 px-3.5 py-2 text-sm font-extrabold text-white shadow-sm transition hover:bg-pink-600 sm:px-4"
+              href="/levels"
+              className="inline-flex min-h-10.5 shrink-0 items-center gap-1.5 rounded-xl bg-pink-500 px-3.5 py-2 text-sm font-extrabold text-white shadow-sm transition hover:bg-pink-600 active:scale-[0.99] sm:px-4"
             >
-              ← Home
+              ← Levels
             </Link>
-            <p className="min-w-0 truncate rounded-full bg-pink-100 px-2.5 py-1 text-[11px] font-extrabold text-pink-800 sm:px-3 sm:text-sm">
+            <p className="min-w-0 truncate rounded-full bg-pink-100 px-2.5 py-1 text-xs font-extrabold text-pink-800 sm:px-3 sm:text-sm">
               {levelMeta.label} • {Math.min(activeIndex + 1, cards.length)}/
               {cards.length}
               {isShuffled && " 🔀"}
@@ -592,7 +741,7 @@ function QuizContent() {
                 type="button"
                 onClick={toggleMusic}
                 disabled={!isMusicAvailable}
-                className="rounded-xl border-2 border-pink-200 bg-pink-50 px-2 py-1.5 text-sm transition hover:bg-pink-100 disabled:opacity-50"
+                className="min-h-10 rounded-xl border-2 border-pink-200 bg-pink-50 px-2.5 py-1.5 text-sm transition hover:bg-pink-100 disabled:opacity-50"
                 aria-label={isMusicOn ? "Mute music" : "Play music"}
               >
                 {isMusicAvailable ? (isMusicOn ? "🔊" : "🔇") : "🚫"}
@@ -621,7 +770,7 @@ function QuizContent() {
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
-            <span className="text-[11px] font-bold text-pink-700 sm:text-xs">
+            <span className="text-xs font-bold text-pink-700">
               {Math.round(progressPercent)}%
             </span>
           </div>
@@ -652,11 +801,11 @@ function QuizContent() {
               >
                 {/* Card face label */}
                 <div className="mb-2 flex items-center justify-between sm:mb-5">
-                  <p className="rounded-full bg-pink-100 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-pink-800 sm:px-3 sm:py-1 sm:text-xs">
+                  <p className="rounded-full bg-pink-100 px-2.5 py-0.5 text-xs font-extrabold uppercase tracking-wider text-pink-800 sm:px-3 sm:py-1">
                     {showBack ? "✨ Answer" : "📖 Question"}
                   </p>
                   {isAnswered && (
-                    <span className="text-[10px] font-semibold text-pink-700 sm:text-xs">
+                    <span className="text-xs font-semibold text-pink-700 sm:text-sm">
                       Tap or swipe to flip
                     </span>
                   )}
@@ -692,9 +841,9 @@ function QuizContent() {
                         />
                       ) : (
                         <div>
-                          <p className="text-3xl">🖼️</p>
-                          <p className="mt-1 text-xs font-bold uppercase tracking-wide text-pink-700">
-                            Add image: /images/flashcards/{activeCard.id}.webp
+                          <p className="text-3xl">�</p>
+                          <p className="mt-1 text-xs font-bold text-pink-700">
+                            Picture not available
                           </p>
                         </div>
                       )}
@@ -809,12 +958,12 @@ function QuizContent() {
 
           {/* ─── Navigation Controls ─── */}
           <div className="mx-auto mt-4 w-full max-w-3xl sm:mt-6">
-            <div className="grid grid-cols-3 gap-1.5 rounded-2xl border-2 border-pink-200 bg-pink-50 p-2 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-2 sm:p-3">
+            <div className="grid grid-cols-1 gap-2 rounded-2xl border-2 border-pink-200 bg-pink-50 p-2 sm:grid-cols-3 sm:gap-2 sm:p-3">
               <button
                 type="button"
                 onClick={prevCard}
                 disabled={activeIndex === 0}
-                className="w-full rounded-xl border-2 border-pink-300 bg-white px-2 py-2.5 text-xs font-bold text-pink-600 transition hover:bg-pink-100 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-4 sm:text-sm"
+                className="min-h-11 w-full rounded-xl border-2 border-pink-300 bg-white px-3 py-2.5 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99] disabled:opacity-40 sm:rounded-2xl"
               >
                 ← Prev
               </button>
@@ -822,7 +971,7 @@ function QuizContent() {
                 type="button"
                 onClick={flipCard}
                 disabled={!isAnswered}
-                className="w-full rounded-xl border-2 border-pink-300 bg-white px-2 py-2.5 text-xs font-bold text-pink-600 transition hover:bg-pink-100 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-4 sm:text-sm"
+                className="min-h-11 w-full rounded-xl border-2 border-pink-300 bg-white px-3 py-2.5 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99] disabled:opacity-40 sm:rounded-2xl"
               >
                 {showBack ? "Question" : "Flip"} 🔄
               </button>
@@ -830,7 +979,7 @@ function QuizContent() {
                 type="button"
                 onClick={nextCard}
                 disabled={!isAnswered || isLastCard}
-                className="w-full rounded-xl bg-linear-to-r from-pink-500 to-pink-400 px-2 py-2.5 text-xs font-extrabold text-white shadow-md shadow-pink-500/25 transition hover:-translate-y-0.5 disabled:opacity-40 sm:w-auto sm:rounded-2xl sm:px-5 sm:text-sm"
+                className="min-h-11 w-full rounded-xl bg-linear-to-r from-pink-500 to-pink-400 px-3 py-2.5 text-sm font-extrabold text-white shadow-md shadow-pink-500/25 transition hover:-translate-y-0.5 active:scale-[0.99] disabled:opacity-40 sm:rounded-2xl"
               >
                 Next →
               </button>
@@ -838,7 +987,7 @@ function QuizContent() {
             <button
               type="button"
               onClick={() => setShowResetConfirm(true)}
-              className="mt-2 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-xs font-semibold text-pink-700 transition hover:bg-pink-50 hover:text-pink-800 sm:text-sm"
+              className="mt-2 min-h-11 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm font-semibold text-pink-700 transition hover:bg-pink-50 hover:text-pink-800 active:scale-[0.99]"
             >
               🗑️ Reset Progress & Shuffle
             </button>
@@ -858,7 +1007,7 @@ function QuizContent() {
                   <button
                     type="button"
                     onClick={() => setShowResetConfirm(false)}
-                    className="rounded-xl border-2 border-pink-200 bg-pink-50 px-3 py-2 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+                    className="min-h-11 rounded-xl border-2 border-pink-200 bg-pink-50 px-3 py-2 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99]"
                   >
                     Cancel
                   </button>
@@ -868,7 +1017,7 @@ function QuizContent() {
                       resetProgress();
                       setShowResetConfirm(false);
                     }}
-                    className="rounded-xl bg-pink-500 px-3 py-2 text-sm font-extrabold text-white transition hover:bg-pink-600"
+                    className="min-h-11 rounded-xl bg-pink-500 px-3 py-2 text-sm font-extrabold text-white transition hover:bg-pink-600 active:scale-[0.99]"
                   >
                     Yes, Reset
                   </button>
@@ -910,12 +1059,56 @@ function QuizContent() {
                 </p>
               </div>
 
+              <div
+                className={`mt-3 rounded-2xl border-2 p-4 text-left ${
+                  didPassCurrentRun
+                    ? "border-green-200 bg-green-50 text-green-700"
+                    : "border-pink-200 bg-pink-50 text-pink-700"
+                }`}
+              >
+                <p className="text-xs font-black uppercase tracking-wide">
+                  Pass Mark
+                </p>
+                <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-white/70 px-3 py-2.5">
+                  <p className="text-sm font-bold">Need</p>
+                  <p className="text-xl font-black">
+                    {passingScore}/{cards.length}
+                  </p>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-white/70 px-3 py-2.5">
+                  <p className="text-sm font-bold">You got</p>
+                  <p className="text-xl font-black">
+                    {score}/{cards.length}
+                  </p>
+                </div>
+                <p className="mt-3 text-sm font-extrabold">
+                  {didPassCurrentRun
+                    ? "🎉 Awesome! You passed this level."
+                    : "💪 Nice try! Play again to beat the pass mark."}
+                  {didPassCurrentRun && unlockTarget
+                    ? ` ${flashcardLevelMeta[unlockTarget].label} is now unlocked.`
+                    : ""}
+                </p>
+              </div>
+
               {/* Actions */}
-              <div className="mt-5 flex flex-wrap justify-center gap-3">
+              <div className="mt-5 grid w-full gap-2.5 sm:flex sm:flex-wrap sm:justify-center sm:gap-3">
+                {didPassCurrentRun && unlockTarget && (
+                  <Link
+                    href={`/quiz?level=${unlockTarget}`}
+                    className="inline-flex min-h-11.5 w-full items-center justify-center rounded-2xl bg-linear-to-r from-pink-500 to-pink-400 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:-translate-y-0.5 active:scale-[0.99] sm:w-auto"
+                  >
+                    Next Level: {flashcardLevelMeta[unlockTarget].label} ▶
+                  </Link>
+                )}
                 <button
                   type="button"
                   onClick={restart}
-                  className="rounded-2xl bg-linear-to-r from-pink-500 to-pink-400 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:-translate-y-0.5"
+                  className={`inline-flex min-h-11.5 w-full items-center justify-center rounded-2xl px-6 py-3 text-sm font-extrabold transition active:scale-[0.99] sm:w-auto ${
+                    didPassCurrentRun && unlockTarget
+                      ? "border-2 border-pink-300 bg-pink-50 text-pink-600 hover:bg-pink-100"
+                      : "bg-linear-to-r from-pink-500 to-pink-400 text-white shadow-lg shadow-pink-500/25 hover:-translate-y-0.5"
+                  }`}
                 >
                   Play Again 🔄
                 </button>
@@ -923,16 +1116,16 @@ function QuizContent() {
                   <button
                     type="button"
                     onClick={() => setShowReview(true)}
-                    className="rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-100"
+                    className="inline-flex min-h-11.5 w-full items-center justify-center rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99] sm:w-auto"
                   >
                     Review Mistakes 📝
                   </button>
                 )}
                 <Link
-                  href="/"
-                  className="rounded-2xl border-2 border-pink-300 bg-white px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-50"
+                  href="/levels"
+                  className="inline-flex min-h-11.5 w-full items-center justify-center rounded-2xl border-2 border-pink-300 bg-white px-6 py-3 text-sm font-bold text-pink-600 transition hover:bg-pink-50 active:scale-[0.99] sm:w-auto"
                 >
-                  Home 🏠
+                  All Levels 📚
                 </Link>
               </div>
             </div>
