@@ -775,255 +775,262 @@ function QuizContent() {
             </span>
           </div>
 
-          {/* ─── Flashcard ─── */}
-          <article className="mx-auto w-full max-w-3xl">
-            <div className="relative sm:pb-2">
-              {/* Stacked card effect (desktop only) */}
-              <div className="pointer-events-none absolute inset-x-3 top-2 hidden h-full rounded-3xl border border-pink-200 bg-pink-100/50 sm:block" />
-              <div className="pointer-events-none absolute inset-x-1.5 top-1 hidden h-full rounded-3xl border border-pink-200 bg-white/80 sm:block" />
+          {!quizDone && (
+            <>
+              {/* ─── Flashcard ─── */}
+              <article className="mx-auto w-full max-w-3xl">
+                <div className="relative sm:pb-2">
+                  {/* Stacked card effect (desktop only) */}
+                  <div className="pointer-events-none absolute inset-x-3 top-2 hidden h-full rounded-3xl border border-pink-200 bg-pink-100/50 sm:block" />
+                  <div className="pointer-events-none absolute inset-x-1.5 top-1 hidden h-full rounded-3xl border border-pink-200 bg-white/80 sm:block" />
 
-              <section
-                key={`${activeIndex}-${showBack ? "back" : "front"}`}
-                className="study-card animate-card-flip relative rounded-2xl border-2 border-pink-300 bg-white p-3 shadow-2xl sm:min-h-96 sm:rounded-3xl sm:p-8"
-                onClick={handleCardTap}
-                onTouchStart={handleCardTouchStart}
-                onTouchEnd={handleCardTouchEnd}
-                onKeyDown={(event) => {
-                  if (!isAnswered) return;
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setShowBack((c) => !c);
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-                aria-label="Flashcard. Tap, swipe, or press Enter to flip after answering."
-              >
-                {/* Card face label */}
-                <div className="mb-2 flex items-center justify-between sm:mb-5">
-                  <p className="rounded-full bg-pink-100 px-2.5 py-0.5 text-xs font-extrabold uppercase tracking-wider text-pink-800 sm:px-3 sm:py-1">
-                    {showBack ? "✨ Answer" : "📖 Question"}
-                  </p>
-                  {isAnswered && (
-                    <span className="text-xs font-semibold text-pink-700 sm:text-sm">
-                      Tap or swipe to flip
-                    </span>
-                  )}
-                </div>
-
-                {!activeCard ? (
-                  <div className="grid min-h-80 place-items-center text-center">
-                    <div>
-                      <p className="text-2xl font-black text-pink-800">
-                        No cards found
+                  <section
+                    key={`${activeIndex}-${showBack ? "back" : "front"}`}
+                    className="study-card animate-card-flip relative rounded-2xl border-2 border-pink-300 bg-white p-3 shadow-2xl sm:min-h-96 sm:rounded-3xl sm:p-8"
+                    onClick={handleCardTap}
+                    onTouchStart={handleCardTouchStart}
+                    onTouchEnd={handleCardTouchEnd}
+                    onKeyDown={(event) => {
+                      if (!isAnswered) return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setShowBack((c) => !c);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Flashcard. Tap, swipe, or press Enter to flip after answering."
+                  >
+                    {/* Card face label */}
+                    <div className="mb-2 flex items-center justify-between sm:mb-5">
+                      <p className="rounded-full bg-pink-100 px-2.5 py-0.5 text-xs font-extrabold uppercase tracking-wider text-pink-800 sm:px-3 sm:py-1">
+                        {showBack ? "✨ Answer" : "📖 Question"}
                       </p>
-                      <p className="mt-2 text-sm font-semibold text-pink-700">
-                        Please pick another level.
-                      </p>
+                      {isAnswered && (
+                        <span className="text-xs font-semibold text-pink-700 sm:text-sm">
+                          Tap or swipe to flip
+                        </span>
+                      )}
                     </div>
-                  </div>
-                ) : !showBack ? (
-                  <>
-                    <div className="mb-3 grid min-h-20 place-items-center rounded-2xl border-2 border-dashed border-pink-300 bg-pink-50 p-2 text-center sm:mb-4 sm:min-h-28 sm:p-3">
-                      {activeCard.imageSrc && !imageFailed ? (
-                        <Image
-                          src={activeCard.imageSrc}
-                          alt={`Question ${activeCard.id} illustration`}
-                          width={640}
-                          height={360}
-                          sizes="(max-width: 640px) 100vw, 640px"
-                          unoptimized
-                          loading="eager"
-                          fetchPriority="high"
-                          priority={activeIndex === 0}
-                          onError={() => setImageFailed(true)}
-                          className="h-28 w-full rounded-xl object-contain sm:h-40"
-                        />
-                      ) : (
+
+                    {!activeCard ? (
+                      <div className="grid min-h-80 place-items-center text-center">
                         <div>
-                          <p className="text-3xl">�</p>
-                          <p className="mt-1 text-xs font-bold text-pink-700">
-                            Picture not available
+                          <p className="text-2xl font-black text-pink-800">
+                            No cards found
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-pink-700">
+                            Please pick another level.
                           </p>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    ) : !showBack ? (
+                      <>
+                        <div className="mb-3 grid min-h-20 place-items-center rounded-2xl border-2 border-dashed border-pink-300 bg-pink-50 p-2 text-center sm:mb-4 sm:min-h-28 sm:p-3">
+                          {activeCard.imageSrc && !imageFailed ? (
+                            <Image
+                              src={activeCard.imageSrc}
+                              alt={`Question ${activeCard.id} illustration`}
+                              width={640}
+                              height={360}
+                              sizes="(max-width: 640px) 100vw, 640px"
+                              unoptimized
+                              loading="eager"
+                              fetchPriority="high"
+                              priority={activeIndex === 0}
+                              onError={() => setImageFailed(true)}
+                              className="h-28 w-full rounded-xl object-contain sm:h-40"
+                            />
+                          ) : (
+                            <div>
+                              <p className="text-3xl">�</p>
+                              <p className="mt-1 text-xs font-bold text-pink-700">
+                                Picture not available
+                              </p>
+                            </div>
+                          )}
+                        </div>
 
-                    {/* Question */}
-                    <p className="text-lg font-black leading-snug text-pink-900 sm:text-3xl">
-                      {formatQuestionBlank(activeCard.front)}
-                    </p>
-
-                    {/* Options */}
-                    <div className="mt-4 grid gap-2 sm:mt-7 sm:gap-3">
-                      {(
-                        Object.entries(activeCard.options) as [
-                          FlashcardOptionKey,
-                          string,
-                        ][]
-                      ).map(([optionKey, value]) => {
-                        const isCorrect = optionKey === activeCard.answer;
-                        const isPicked = selectedOption === optionKey;
-
-                        let style =
-                          "border-pink-200 hover:border-pink-400 hover:bg-pink-50";
-                        if (isAnswered && isCorrect) {
-                          style = "border-green-400 bg-green-50 text-green-700";
-                        } else if (isAnswered && isPicked && !isCorrect) {
-                          style = "border-red-400 bg-red-50 text-red-600";
-                        }
-
-                        return (
-                          <button
-                            key={optionKey}
-                            type="button"
-                            onClick={() => answer(optionKey)}
-                            disabled={isAnswered}
-                            className={`rounded-2xl border-2 bg-white px-3 py-3 text-left text-sm font-semibold transition sm:px-4 sm:py-4 sm:text-base ${style} ${
-                              isAnswered ? "cursor-default" : "cursor-pointer"
-                            } ${isAnswered && isCorrect ? "animate-pop-in" : ""} ${isAnswered && isPicked && !isCorrect ? "animate-shake" : ""}`}
-                          >
-                            <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-pink-100 text-xs font-black uppercase text-pink-800 sm:mr-3 sm:h-7 sm:w-7 sm:text-sm">
-                              {optionKey}
-                            </span>
-                            {value}
-                            {isAnswered && isCorrect && (
-                              <span className="ml-2">✅</span>
-                            )}
-                            {isAnswered && isPicked && !isCorrect && (
-                              <span className="ml-2">❌</span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {!isAnswered && (
-                      <p className="mt-2 text-xs font-semibold text-pink-700 sm:mt-5 sm:text-sm">
-                        Pick an answer ✨
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  /* ─── Back of Card ─── */
-                  <div className="flex h-full flex-col justify-between gap-4 sm:gap-6">
-                    <div>
-                      <p className="text-base font-extrabold text-pink-600 sm:text-lg">
-                        Correct Answer
-                      </p>
-                      <p className="mt-1 text-xl font-black text-pink-800 sm:text-4xl">
-                        {activeCard.answer.toUpperCase()}.{" "}
-                        {activeCard.options[activeCard.answer]}
-                      </p>
-
-                      <div
-                        className={`mt-3 rounded-2xl border-2 p-3 sm:mt-6 sm:p-5 ${
-                          selectedOption === activeCard?.answer
-                            ? "border-green-300 bg-green-50"
-                            : "border-red-300 bg-red-50"
-                        }`}
-                      >
-                        <p className="text-base font-extrabold">
-                          {selectedOption === activeCard?.answer
-                            ? "✅ You got it right!"
-                            : "❌ Not quite right"}
+                        {/* Question */}
+                        <p className="text-lg font-black leading-snug text-pink-900 sm:text-3xl">
+                          {formatQuestionBlank(activeCard.front)}
                         </p>
-                        <p className="mt-2 text-sm font-semibold opacity-85">
-                          {activeCard.explanation ??
-                            "Review the sentence and subject agreement rule."}
+
+                        {/* Options */}
+                        <div className="mt-4 grid gap-2 sm:mt-7 sm:gap-3">
+                          {(
+                            Object.entries(activeCard.options) as [
+                              FlashcardOptionKey,
+                              string,
+                            ][]
+                          ).map(([optionKey, value]) => {
+                            const isCorrect = optionKey === activeCard.answer;
+                            const isPicked = selectedOption === optionKey;
+
+                            let style =
+                              "border-pink-200 hover:border-pink-400 hover:bg-pink-50";
+                            if (isAnswered && isCorrect) {
+                              style =
+                                "border-green-400 bg-green-50 text-green-700";
+                            } else if (isAnswered && isPicked && !isCorrect) {
+                              style = "border-red-400 bg-red-50 text-red-600";
+                            }
+
+                            return (
+                              <button
+                                key={optionKey}
+                                type="button"
+                                onClick={() => answer(optionKey)}
+                                disabled={isAnswered}
+                                className={`rounded-2xl border-2 bg-white px-3 py-3 text-left text-sm font-semibold transition sm:px-4 sm:py-4 sm:text-base ${style} ${
+                                  isAnswered
+                                    ? "cursor-default"
+                                    : "cursor-pointer"
+                                } ${isAnswered && isCorrect ? "animate-pop-in" : ""} ${isAnswered && isPicked && !isCorrect ? "animate-shake" : ""}`}
+                              >
+                                <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-pink-100 text-xs font-black uppercase text-pink-800 sm:mr-3 sm:h-7 sm:w-7 sm:text-sm">
+                                  {optionKey}
+                                </span>
+                                {value}
+                                {isAnswered && isCorrect && (
+                                  <span className="ml-2">✅</span>
+                                )}
+                                {isAnswered && isPicked && !isCorrect && (
+                                  <span className="ml-2">❌</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {!isAnswered && (
+                          <p className="mt-2 text-xs font-semibold text-pink-700 sm:mt-5 sm:text-sm">
+                            Pick an answer ✨
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      /* ─── Back of Card ─── */
+                      <div className="flex h-full flex-col justify-between gap-4 sm:gap-6">
+                        <div>
+                          <p className="text-base font-extrabold text-pink-600 sm:text-lg">
+                            Correct Answer
+                          </p>
+                          <p className="mt-1 text-xl font-black text-pink-800 sm:text-4xl">
+                            {activeCard.answer.toUpperCase()}.{" "}
+                            {activeCard.options[activeCard.answer]}
+                          </p>
+
+                          <div
+                            className={`mt-3 rounded-2xl border-2 p-3 sm:mt-6 sm:p-5 ${
+                              selectedOption === activeCard?.answer
+                                ? "border-green-300 bg-green-50"
+                                : "border-red-300 bg-red-50"
+                            }`}
+                          >
+                            <p className="text-base font-extrabold">
+                              {selectedOption === activeCard?.answer
+                                ? "✅ You got it right!"
+                                : "❌ Not quite right"}
+                            </p>
+                            <p className="mt-2 text-sm font-semibold opacity-85">
+                              {activeCard.explanation ??
+                                "Review the sentence and subject agreement rule."}
+                            </p>
+                          </div>
+
+                          {/* Star earned indicator */}
+                          {selectedOption === activeCard?.answer && (
+                            <div className="mt-3 flex items-center gap-2 rounded-xl border border-yellow-200 bg-yellow-50 p-2 sm:mt-4 sm:p-3">
+                              <span className="animate-bounce-star text-2xl">
+                                ⭐
+                              </span>
+                              <span className="text-sm font-bold text-yellow-700">
+                                +1 Star earned!
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        <p className="text-xs font-semibold text-pink-700 sm:text-sm">
+                          Flip to see question, or Next →
                         </p>
                       </div>
+                    )}
+                  </section>
+                </div>
+              </article>
 
-                      {/* Star earned indicator */}
-                      {selectedOption === activeCard?.answer && (
-                        <div className="mt-3 flex items-center gap-2 rounded-xl border border-yellow-200 bg-yellow-50 p-2 sm:mt-4 sm:p-3">
-                          <span className="animate-bounce-star text-2xl">
-                            ⭐
-                          </span>
-                          <span className="text-sm font-bold text-yellow-700">
-                            +1 Star earned!
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <p className="text-xs font-semibold text-pink-700 sm:text-sm">
-                      Flip to see question, or Next →
-                    </p>
-                  </div>
-                )}
-              </section>
-            </div>
-          </article>
-
-          {/* ─── Navigation Controls ─── */}
-          <div className="mx-auto mt-4 w-full max-w-3xl sm:mt-6">
-            <div className="grid grid-cols-1 gap-2 rounded-2xl border-2 border-pink-200 bg-pink-50 p-2 sm:grid-cols-3 sm:gap-2 sm:p-3">
-              <button
-                type="button"
-                onClick={prevCard}
-                disabled={activeIndex === 0}
-                className="min-h-11 w-full rounded-xl border-2 border-pink-300 bg-white px-3 py-2.5 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99] disabled:opacity-40 sm:rounded-2xl"
-              >
-                ← Prev
-              </button>
-              <button
-                type="button"
-                onClick={flipCard}
-                disabled={!isAnswered}
-                className="min-h-11 w-full rounded-xl border-2 border-pink-300 bg-white px-3 py-2.5 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99] disabled:opacity-40 sm:rounded-2xl"
-              >
-                {showBack ? "Question" : "Flip"} 🔄
-              </button>
-              <button
-                type="button"
-                onClick={nextCard}
-                disabled={!isAnswered || isLastCard}
-                className="min-h-11 w-full rounded-xl bg-linear-to-r from-pink-500 to-pink-400 px-3 py-2.5 text-sm font-extrabold text-white shadow-md shadow-pink-500/25 transition hover:-translate-y-0.5 active:scale-[0.99] disabled:opacity-40 sm:rounded-2xl"
-              >
-                Next →
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowResetConfirm(true)}
-              className="mt-2 min-h-11 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm font-semibold text-pink-700 transition hover:bg-pink-50 hover:text-pink-800 active:scale-[0.99]"
-            >
-              🗑️ Reset Progress & Shuffle
-            </button>
-          </div>
-
-          {showResetConfirm && (
-            <div className="fixed inset-0 z-60 flex items-center justify-center bg-pink-900/35 px-4">
-              <div className="w-full max-w-sm rounded-3xl border-2 border-pink-200 bg-white p-5 shadow-2xl sm:p-6">
-                <h3 className="text-lg font-black text-pink-800 sm:text-xl">
-                  Reset progress?
-                </h3>
-                <p className="mt-2 text-sm font-semibold text-pink-700">
-                  This will clear your saved progress for this level and
-                  reshuffle the cards.
-                </p>
-                <div className="mt-5 grid grid-cols-2 gap-2">
+              {/* ─── Navigation Controls ─── */}
+              <div className="mx-auto mt-4 w-full max-w-3xl sm:mt-6">
+                <div className="grid grid-cols-1 gap-2 rounded-2xl border-2 border-pink-200 bg-pink-50 p-2 sm:grid-cols-3 sm:gap-2 sm:p-3">
                   <button
                     type="button"
-                    onClick={() => setShowResetConfirm(false)}
-                    className="min-h-11 rounded-xl border-2 border-pink-200 bg-pink-50 px-3 py-2 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99]"
+                    onClick={prevCard}
+                    disabled={activeIndex === 0}
+                    className="min-h-11 w-full rounded-xl border-2 border-pink-300 bg-white px-3 py-2.5 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99] disabled:opacity-40 sm:rounded-2xl"
                   >
-                    Cancel
+                    ← Prev
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      resetProgress();
-                      setShowResetConfirm(false);
-                    }}
-                    className="min-h-11 rounded-xl bg-pink-500 px-3 py-2 text-sm font-extrabold text-white transition hover:bg-pink-600 active:scale-[0.99]"
+                    onClick={flipCard}
+                    disabled={!isAnswered}
+                    className="min-h-11 w-full rounded-xl border-2 border-pink-300 bg-white px-3 py-2.5 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99] disabled:opacity-40 sm:rounded-2xl"
                   >
-                    Yes, Reset
+                    {showBack ? "Question" : "Flip"} 🔄
+                  </button>
+                  <button
+                    type="button"
+                    onClick={nextCard}
+                    disabled={!isAnswered || isLastCard}
+                    className="min-h-11 w-full rounded-xl bg-linear-to-r from-pink-500 to-pink-400 px-3 py-2.5 text-sm font-extrabold text-white shadow-md shadow-pink-500/25 transition hover:-translate-y-0.5 active:scale-[0.99] disabled:opacity-40 sm:rounded-2xl"
+                  >
+                    Next →
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirm(true)}
+                  className="mt-2 min-h-11 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm font-semibold text-pink-700 transition hover:bg-pink-50 hover:text-pink-800 active:scale-[0.99]"
+                >
+                  🗑️ Reset Progress & Shuffle
+                </button>
               </div>
-            </div>
+
+              {showResetConfirm && (
+                <div className="fixed inset-0 z-60 flex items-center justify-center bg-pink-900/35 px-4">
+                  <div className="w-full max-w-sm rounded-3xl border-2 border-pink-200 bg-white p-5 shadow-2xl sm:p-6">
+                    <h3 className="text-lg font-black text-pink-800 sm:text-xl">
+                      Reset progress?
+                    </h3>
+                    <p className="mt-2 text-sm font-semibold text-pink-700">
+                      This will clear your saved progress for this level and
+                      reshuffle the cards.
+                    </p>
+                    <div className="mt-5 grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowResetConfirm(false)}
+                        className="min-h-11 rounded-xl border-2 border-pink-200 bg-pink-50 px-3 py-2 text-sm font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99]"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetProgress();
+                          setShowResetConfirm(false);
+                        }}
+                        className="min-h-11 rounded-xl bg-pink-500 px-3 py-2 text-sm font-extrabold text-white transition hover:bg-pink-600 active:scale-[0.99]"
+                      >
+                        Yes, Reset
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* ─── Quiz Complete Panel ─── */}

@@ -596,7 +596,7 @@ export default function Home() {
                   School
                 </p>
                 <p className="mt-1 text-sm font-extrabold text-pink-800">
-                  St. Anne Collage Lucena, Inc.
+                  St. Anne College Lucena, Inc.
                 </p>
               </div>
             </div>
