@@ -192,3 +192,44 @@ export async function GET() {
     );
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id")?.trim() ?? "";
+
+    if (!id || !ObjectId.isValid(id)) {
+      return NextResponse.json(
+        { error: "Invalid attempt id" },
+        { status: 400 },
+      );
+    }
+
+    const db = await getMongoDb();
+    const collection = db.collection<AttemptDocument & { _id: ObjectId }>(
+      "attempts",
+    );
+
+    const result = await collection.deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 0) {
+      return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, id });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+
+    if (message.includes("MONGODB_URI")) {
+      return NextResponse.json(
+        { error: "Database is not configured" },
+        { status: 503 },
+      );
+    }
+
+    return NextResponse.json(
+      { error: "Failed to delete attempt" },
+      { status: 500 },
+    );
+  }
+}

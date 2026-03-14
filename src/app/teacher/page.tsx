@@ -80,6 +80,11 @@ type StudentLevelAttempts = {
   totalAttempts: number;
 };
 
+type DeleteFeedback = {
+  type: "success" | "error";
+  message: string;
+};
+
 type AdminInsights = {
   classAverageAccuracy: number;
   learnersAtRisk: Array<{ learnerId: string; score: number }>;
@@ -634,6 +639,14 @@ export default function TeacherPage() {
   const [attemptsPerPage, setAttemptsPerPage] = useState<PerPageCount>(20);
   const [studentPage, setStudentPage] = useState(1);
   const [attemptPage, setAttemptPage] = useState(1);
+  const [deletingAttemptId, setDeletingAttemptId] = useState<string | null>(
+    null,
+  );
+  const [pendingDeleteAttempt, setPendingDeleteAttempt] =
+    useState<AttemptRecord | null>(null);
+  const [deleteFeedback, setDeleteFeedback] = useState<DeleteFeedback | null>(
+    null,
+  );
   const [levelPerPage, setLevelPerPage] = useState<PerPageCount>(10);
   const [levelPage, setLevelPage] = useState(1);
   const [studentAttemptsPerPage, setStudentAttemptsPerPage] =
@@ -675,6 +688,59 @@ export default function TeacherPage() {
       setIsLoading(false);
     }
   }, []);
+
+  const deleteAttempt = useCallback(async (attempt: AttemptRecord) => {
+    setDeletingAttemptId(attempt.id);
+    setDeleteFeedback(null);
+
+    try {
+      const response = await fetch(
+        `/api/attempts?id=${encodeURIComponent(attempt.id)}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          response.status === 404
+            ? "Attempt not found"
+            : "Could not delete attempt",
+        );
+      }
+
+      setLiveAttempts((previous) =>
+        previous.filter((item) => item.id !== attempt.id),
+      );
+      setDeleteFeedback({
+        type: "success",
+        message: "Attempt deleted successfully.",
+      });
+      setPendingDeleteAttempt(null);
+    } catch (deleteError) {
+      const message =
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Failed to delete attempt";
+      setDeleteFeedback({ type: "error", message });
+    } finally {
+      setDeletingAttemptId(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!deleteFeedback) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setDeleteFeedback(null);
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [deleteFeedback]);
 
   useEffect(() => {
     void loadAttempts();
@@ -1294,6 +1360,13 @@ export default function TeacherPage() {
                 <h2 className="text-lg font-black text-pink-900">
                   Recent Attempt Records
                 </h2>
+                {deleteFeedback && (
+                  <div
+                    className={`mt-3 rounded-2xl border-2 p-3 text-sm font-bold ${deleteFeedback.type === "success" ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}
+                  >
+                    {deleteFeedback.message}
+                  </div>
+                )}
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-pink-200 bg-white p-3">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold uppercase tracking-wide text-pink-600">
@@ -1328,6 +1401,7 @@ export default function TeacherPage() {
                         <th className="px-3 py-2.5">Score</th>
                         <th className="px-3 py-2.5">Mastery</th>
                         <th className="px-3 py-2.5">Result</th>
+                        <th className="px-3 py-2.5 text-center">Delete</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1353,6 +1427,33 @@ export default function TeacherPage() {
                           </td>
                           <td className="px-3 py-2.5">
                             {attempt.passed ? "Passed" : "Needs Review"}
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setPendingDeleteAttempt(attempt)}
+                              disabled={deletingAttemptId === attempt.id}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={`Delete attempt for ${attempt.studentName}`}
+                              title="Delete attempt"
+                            >
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M3 6h18" />
+                                <path d="M8 6V4h8v2" />
+                                <path d="M19 6l-1 14H6L5 6" />
+                                <path d="M10 11v6" />
+                                <path d="M14 11v6" />
+                              </svg>
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1411,6 +1512,52 @@ export default function TeacherPage() {
                   </p>
                 </div>
               </section>
+            </div>
+          )}
+
+          {pendingDeleteAttempt && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-md rounded-3xl border-2 border-pink-200 bg-white p-5 shadow-xl sm:p-6">
+                <h3 className="text-xl font-black text-pink-900">
+                  Delete Attempt?
+                </h3>
+                <p className="mt-2 text-sm font-semibold text-pink-700">
+                  This will remove the record from the dashboard and database.
+                </p>
+                <div className="mt-3 rounded-2xl border border-pink-200 bg-pink-50 p-3 text-sm text-pink-800">
+                  <p>
+                    <span className="font-bold">Student:</span>{" "}
+                    {pendingDeleteAttempt.studentName}
+                  </p>
+                  <p>
+                    <span className="font-bold">Level:</span>{" "}
+                    {pendingDeleteAttempt.level}
+                  </p>
+                  <p>
+                    <span className="font-bold">Score:</span>{" "}
+                    {pendingDeleteAttempt.score}/{pendingDeleteAttempt.total}
+                  </p>
+                </div>
+                <div className="mt-5 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPendingDeleteAttempt(null)}
+                    className="rounded-xl border-2 border-pink-300 bg-pink-50 px-4 py-2 text-sm font-bold text-pink-700 transition hover:bg-pink-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteAttempt(pendingDeleteAttempt)}
+                    disabled={deletingAttemptId === pendingDeleteAttempt.id}
+                    className="rounded-xl border-2 border-red-300 bg-red-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingAttemptId === pendingDeleteAttempt.id
+                      ? "Deleting..."
+                      : "Delete"}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </section>
