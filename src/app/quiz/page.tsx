@@ -49,6 +49,11 @@ type PersistedCardAnswer = {
   picked: FlashcardOptionKey;
 };
 
+type PersistedOptionOrder = {
+  cardId: number;
+  optionKeys: FlashcardOptionKey[];
+};
+
 type PersistedQuizState = {
   cardIds: number[];
   activeIndex: number;
@@ -56,11 +61,13 @@ type PersistedQuizState = {
   isShuffled: boolean;
   savedAt: number;
   answersByCard?: PersistedCardAnswer[];
+  optionOrderByCard?: PersistedOptionOrder[];
   attemptRecorded?: boolean;
 };
 
 const BACKGROUND_MUSIC_URL = "/audio/background-audio.mp3";
 const QUIZ_STATE_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_OPTION_KEYS: FlashcardOptionKey[] = ["a", "b", "c"];
 
 function formatQuestionBlank(text: string) {
   return text.replace(/_/g, "_______");
@@ -91,6 +98,9 @@ function QuizContent() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [answersByCard, setAnswersByCard] = useState<
     Record<number, FlashcardOptionKey>
+  >({});
+  const [optionOrderByCard, setOptionOrderByCard] = useState<
+    Record<number, FlashcardOptionKey[]>
   >({});
   const [showBack, setShowBack] = useState(false);
   const [isMusicOn, setIsMusicOn] = useState(false);
@@ -154,6 +164,60 @@ function QuizContent() {
     }
 
     return first.every((card, index) => card.id === second[index]?.id);
+  }
+
+  function isOptionKey(value: unknown): value is FlashcardOptionKey {
+    return value === "a" || value === "b" || value === "c";
+  }
+
+  function getShuffledOptionKeys(): FlashcardOptionKey[] {
+    const optionKeys = [...DEFAULT_OPTION_KEYS];
+
+    for (let index = optionKeys.length - 1; index > 0; index -= 1) {
+      const randomIndex = Math.floor(Math.random() * (index + 1));
+      [optionKeys[index], optionKeys[randomIndex]] = [
+        optionKeys[randomIndex],
+        optionKeys[index],
+      ];
+    }
+
+    return optionKeys;
+  }
+
+  function buildOptionOrderMap(
+    deck: Flashcard[],
+  ): Record<number, FlashcardOptionKey[]> {
+    return Object.fromEntries(
+      deck.map((card) => [card.id, getShuffledOptionKeys()]),
+    ) as Record<number, FlashcardOptionKey[]>;
+  }
+
+  function restoreOptionOrderMap(
+    persisted: PersistedOptionOrder[] | undefined,
+    deck: Flashcard[],
+  ): Record<number, FlashcardOptionKey[]> {
+    const persistedByCard = new Map(
+      (persisted ?? []).map((item) => [item.cardId, item.optionKeys]),
+    );
+
+    return Object.fromEntries(
+      deck.map((card) => {
+        const rawOptionKeys = persistedByCard.get(card.id);
+        const normalizedOptionKeys = Array.isArray(rawOptionKeys)
+          ? rawOptionKeys.filter(isOptionKey)
+          : [];
+        const uniqueOptionKeys = new Set(normalizedOptionKeys);
+
+        if (uniqueOptionKeys.size === DEFAULT_OPTION_KEYS.length) {
+          return [
+            card.id,
+            normalizedOptionKeys as FlashcardOptionKey[],
+          ] as const;
+        }
+
+        return [card.id, getShuffledOptionKeys()] as const;
+      }),
+    ) as Record<number, FlashcardOptionKey[]>;
   }
 
   function getShuffledDeck(
@@ -227,7 +291,13 @@ function QuizContent() {
 
       const activeCardId = deck[safeIndex]?.id;
 
-      setCards(deck.length > 0 ? deck : getShuffledDeck(baseCards, baseCards));
+      const restoredDeck =
+        deck.length > 0 ? deck : getShuffledDeck(baseCards, baseCards);
+
+      setCards(restoredDeck);
+      setOptionOrderByCard(
+        restoreOptionOrderMap(saved.optionOrderByCard, restoredDeck),
+      );
       setActiveIndex(safeIndex);
       setAnswersByCard(restoredAnswersByCard);
       setShowBack(
@@ -242,9 +312,12 @@ function QuizContent() {
       setShowReview(false);
       setImageFailed(false);
     } catch {
+      const shuffledDeck = getShuffledDeck(baseCards, cards);
+
       setAnswersByCard({});
       setShowBack(false);
-      setCards((previousCards) => getShuffledDeck(baseCards, previousCards));
+      setCards(shuffledDeck);
+      setOptionOrderByCard(buildOptionOrderMap(shuffledDeck));
       setActiveIndex(0);
       setShowReview(false);
       setIsShuffled(true);
@@ -271,6 +344,12 @@ function QuizContent() {
         cardId: Number(cardId),
         picked,
       })),
+      optionOrderByCard: Object.entries(optionOrderByCard).map(
+        ([cardId, optionKeys]) => ({
+          cardId: Number(cardId),
+          optionKeys,
+        }),
+      ),
       attemptRecorded: isAttemptRecorded,
     };
 
@@ -279,6 +358,7 @@ function QuizContent() {
     activeIndex,
     cards,
     answersByCard,
+    optionOrderByCard,
     isHydrated,
     isAttemptRecorded,
     isShuffled,
@@ -321,10 +401,11 @@ function QuizContent() {
       total: cards.length,
       masteryPercent,
       passed: didPassCurrentRun,
-      completedAt: Date.now(),
     });
 
-    void syncPendingAttempts();
+    if (window.navigator.onLine) {
+      void syncPendingAttempts();
+    }
 
     setLevelProgress(updated);
     setIsAttemptRecorded(true);
@@ -443,20 +524,25 @@ function QuizContent() {
   }
 
   function restart() {
+    const reshuffledDeck = getShuffledDeck(baseCards, cards);
+
     setActiveIndex(0);
     setAnswersByCard({});
+    setOptionOrderByCard(buildOptionOrderMap(reshuffledDeck));
     setShowBack(false);
     setShowReview(false);
     setShowConfetti(false);
     setIsAttemptRecorded(false);
-    if (isShuffled) {
-      setCards((previousCards) => getShuffledDeck(baseCards, previousCards));
-    }
+    setCards(reshuffledDeck);
+    setIsShuffled(true);
   }
 
   function resetProgress() {
+    const reshuffledDeck = getShuffledDeck(baseCards, cards);
+
     localStorage.removeItem(quizStateKey);
-    setCards(getShuffledDeck(baseCards, baseCards));
+    setCards(reshuffledDeck);
+    setOptionOrderByCard(buildOptionOrderMap(reshuffledDeck));
     setActiveIndex(0);
     setAnswersByCard({});
     setShowBack(false);
@@ -879,11 +965,10 @@ function QuizContent() {
                         {/* Options */}
                         <div className="mt-4 grid gap-2 sm:mt-7 sm:gap-3">
                           {(
-                            Object.entries(activeCard.options) as [
-                              FlashcardOptionKey,
-                              string,
-                            ][]
-                          ).map(([optionKey, value]) => {
+                            optionOrderByCard[activeCard.id] ??
+                            DEFAULT_OPTION_KEYS
+                          ).map((optionKey) => {
+                            const value = activeCard.options[optionKey];
                             const isCorrect = optionKey === activeCard.answer;
                             const isPicked = selectedOption === optionKey;
 

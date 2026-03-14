@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { searchCards, type Flashcard } from "./data/flashcard";
-import { readLevelProgress } from "./data/level-progress";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { flashcardLevelMeta, type FlashcardLevel } from "./data/flashcard";
+import {
+  createDefaultLevelProgress,
+  readLevelProgress,
+  type LevelProgressMap,
+} from "./data/level-progress";
 import { getStudentName, setStudentName } from "./data/student-attempt";
 
 type InstallPromptEvent = Event & {
@@ -17,72 +21,55 @@ type WindowWithInstallPrompt = Window & {
 
 export default function Home() {
   const deferredPromptRef = useRef<InstallPromptEvent | null>(null);
-  const [canPromptInstall, setCanPromptInstall] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
+  const platformRef = useRef<"ios" | "android" | "desktop">("desktop");
 
-    return Boolean((window as WindowWithInstallPrompt).__deferredInstallPrompt);
-  });
+  const [canPromptInstall, setCanPromptInstall] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [installHint, setInstallHint] = useState("");
   const [isPreparingInstall, setIsPreparingInstall] = useState(false);
   const [showIOSGuide, setShowIOSGuide] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Flashcard[]>([]);
-  const [showSearch, setShowSearch] = useState(false);
-  const [isOfflineReady, setIsOfflineReady] = useState(false);
-  const [studentName, setStudentNameState] = useState(() => {
-    if (typeof window === "undefined") {
-      return "";
-    }
+  const [isStandaloneMode, setIsStandaloneMode] = useState(false);
 
-    return getStudentName();
-  });
-  const [startLearningHref] = useState(() => {
-    if (typeof window === "undefined") {
-      return "/quiz?level=easy";
-    }
+  const [levelProgress, setLevelProgress] = useState<LevelProgressMap>(
+    createDefaultLevelProgress(),
+  );
+  const [studentName, setStudentNameState] = useState("");
 
-    const progress = readLevelProgress();
+  const isInstalledOrStandalone = isInstalled || isStandaloneMode;
 
-    if (!progress.easy.passed) {
-      return "/quiz?level=easy";
-    }
+  const progressSummary = useMemo(() => {
+    const nextLevel: FlashcardLevel = !levelProgress.easy.passed
+      ? "easy"
+      : !levelProgress.medium.passed
+        ? "medium"
+        : "hard";
 
-    if (!progress.medium.passed) {
-      return "/quiz?level=medium";
-    }
+    const continueLabel =
+      levelProgress[nextLevel].attempts > 0
+        ? `Continue ${flashcardLevelMeta[nextLevel].label}`
+        : `Start ${flashcardLevelMeta[nextLevel].label}`;
 
-    return "/quiz?level=hard";
-  });
+    return {
+      nextLevel,
+      continueLabel,
+    };
+  }, [levelProgress]);
 
-  const [startLearningLabel] = useState(() => {
-    if (typeof window === "undefined") {
-      return "Start Easy";
-    }
+  const startLearningHref = `/quiz?level=${progressSummary.nextLevel}`;
+  const startLearningLabel = progressSummary.continueLabel;
 
-    const progress = readLevelProgress();
-
-    if (!progress.easy.passed) {
-      return progress.easy.attempts > 0 ? "Continue Easy" : "Start Easy";
-    }
-
-    if (!progress.medium.passed) {
-      return progress.medium.attempts > 0 ? "Continue Medium" : "Start Medium";
-    }
-
-    return progress.hard.attempts > 0 ? "Continue Hard" : "Start Hard";
-  });
-
-  const inStandaloneMode =
-    typeof window !== "undefined" &&
-    (window.matchMedia("(display-mode: standalone)").matches ||
+  useEffect(() => {
+    const globalWindow = window as WindowWithInstallPrompt;
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
       (window.navigator as Navigator & { standalone?: boolean }).standalone ===
-        true);
-  const isInstalledOrStandalone = isInstalled || inStandaloneMode;
+        true;
 
-  const platformRef = useRef<"ios" | "android" | "desktop">("desktop");
+    setIsStandaloneMode(standalone);
+    setCanPromptInstall(Boolean(globalWindow.__deferredInstallPrompt));
+    setLevelProgress(readLevelProgress());
+    setStudentNameState(getStudentName());
+  }, []);
 
   useEffect(() => {
     const ua = navigator.userAgent.toLowerCase();
@@ -91,25 +78,31 @@ export default function Home() {
     } else if (/android/.test(ua)) {
       platformRef.current = "android";
     }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        setLevelProgress(readLevelProgress());
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
     let cleanupServiceWorkerListener = () => {};
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.ready.then(() => {
-        setIsOfflineReady(true);
-      });
-
       navigator.serviceWorker.getRegistration().then((reg) => {
         if (!reg) {
           setInstallHint("Service worker unavailable. Check browser settings.");
         }
       });
 
-      const onControllerChange = () => {
-        setIsOfflineReady(true);
-      };
+      const onControllerChange = () => {};
       navigator.serviceWorker.addEventListener(
         "controllerchange",
         onControllerChange,
@@ -302,40 +295,51 @@ export default function Home() {
     );
   }
 
-  function handleSearch(q: string) {
-    setSearchQuery(q);
-    if (q.trim().length >= 2) {
-      setSearchResults(searchCards(q));
-      setShowSearch(true);
-    } else {
-      setSearchResults([]);
-      setShowSearch(false);
-    }
-  }
+  const displayName = studentName.trim() || "Learner";
 
   return (
     <div className="safe-area-content min-h-screen bg-background px-3 py-4 text-foreground sm:px-4 sm:py-8">
       {!isInstalledOrStandalone && (
-        <div className="mx-auto mb-4 max-w-6xl">
-          <button
-            type="button"
-            onClick={installApp}
-            disabled={isPreparingInstall}
-            className="install-pulse flex min-h-12 w-full items-center justify-center gap-3 rounded-2xl bg-linear-to-r from-pink-500 to-pink-400 px-6 py-3.5 text-base font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:-translate-y-0.5 hover:shadow-xl active:scale-[0.99] disabled:cursor-wait disabled:opacity-80"
-          >
-            <span className="text-2xl">📲</span>
-            {isPreparingInstall
-              ? "Getting Ready..."
-              : canPromptInstall
-                ? "Install App ⭐"
-                : "How to Install 📲"}
-          </button>
+        <section className="mx-auto mb-4 max-w-6xl rounded-3xl border-2 border-pink-200 bg-linear-to-r from-pink-100 via-white to-pink-50 p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-pink-600">
+                Install App
+              </p>
+              <h2 className="mt-1 text-lg font-black text-pink-900 sm:text-2xl">
+                Study even without internet
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-pink-700">
+                Add BlushCards to your home screen and use offline anytime.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={installApp}
+              disabled={isPreparingInstall}
+              className="install-pulse min-h-12 rounded-2xl bg-linear-to-r from-pink-500 to-pink-400 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:-translate-y-0.5 active:scale-[0.99] disabled:cursor-wait disabled:opacity-80"
+            >
+              {isPreparingInstall
+                ? "Preparing Install..."
+                : canPromptInstall
+                  ? "Install App"
+                  : "Show Install Steps"}
+            </button>
+          </div>
+
           {installHint && (
-            <p className="mt-2 text-center text-sm font-semibold text-pink-700">
+            <p className="mt-2 text-sm font-semibold text-pink-700">
               {installHint}
             </p>
           )}
-        </div>
+        </section>
+      )}
+
+      {isInstalledOrStandalone && (
+        <section className="mx-auto mb-4 max-w-6xl rounded-2xl border-2 border-green-200 bg-green-50 p-3 text-sm font-bold text-green-700">
+          App installed. You are ready to learn offline.
+        </section>
       )}
 
       {showIOSGuide && (
@@ -391,257 +395,142 @@ export default function Home() {
       )}
 
       <main className="mx-auto w-full max-w-6xl">
-        <section className="rounded-3xl border-2 border-pink-200 bg-white p-4 shadow-xl sm:p-10">
-          <div className="flex flex-col-reverse items-start gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="w-full">
-              <p className="inline-flex items-center gap-1.5 rounded-full bg-pink-100 px-4 py-1.5 text-xs font-extrabold uppercase tracking-wider text-pink-600">
+        <section className="rounded-3xl border-2 border-pink-200 bg-white p-4 shadow-xl sm:p-8">
+          <div className="grid gap-4 lg:grid-cols-[1.25fr_0.95fr]">
+            <article className="rounded-3xl border-2 border-pink-200 bg-linear-to-b from-pink-50 via-white to-pink-50 p-5 sm:p-7">
+              <p className="inline-flex items-center gap-2 rounded-full bg-pink-100 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-pink-700">
                 <span className="animate-sparkle">✨</span>
-                BlushCards: Grammar Fun
+                BlushCards
               </p>
-              <h1 className="mt-3 text-3xl font-black leading-tight text-pink-900 sm:mt-4 sm:text-5xl">
-                BlushCards: Grammar Fun 🌸
+
+              <h1 className="mt-3 text-3xl font-black leading-tight text-pink-900 sm:text-5xl">
+                Learn Grammar the Fun Way
               </h1>
-              <p className="mt-2 max-w-2xl text-sm font-semibold text-pink-800 sm:mt-3 sm:text-lg">
-                Pick a level and start learning — each set has flashcards with
-                instant feedback, explanations, and rewards!
+
+              <p className="mt-3 max-w-xl text-sm font-semibold text-pink-800 sm:text-lg">
+                Tap Start Learning, answer flashcards, and collect stars while
+                you level up.
               </p>
-            </div>
-            <div className="animate-float text-4xl sm:text-7xl">🎀</div>
-          </div>
 
-          <div className="mt-5 rounded-3xl border-2 border-pink-200 bg-linear-to-b from-pink-50 to-white p-4 sm:mt-6 sm:p-5">
-            <p className="text-xs font-extrabold uppercase tracking-wider text-pink-600">
-              Start Here
-            </p>
-            <h3 className="mt-1 text-lg font-black text-pink-800 sm:text-xl">
-              Begin your learning journey
-            </h3>
-            <p className="mt-1 text-sm font-semibold text-pink-700">
-              Choose a level, answer questions, and unlock the next challenge.
-            </p>
-
-            <div className="mt-4 rounded-2xl border-2 border-pink-200 bg-white p-3">
-              <label
-                htmlFor="student-name"
-                className="text-xs font-extrabold uppercase tracking-wide text-pink-600"
-              >
-                Student Name
-              </label>
-              <input
-                id="student-name"
-                type="text"
-                value={studentName}
-                onChange={(event) => {
-                  setStudentNameState(event.target.value);
-                }}
-                onBlur={() => {
-                  const saved = setStudentName(studentName);
-                  setStudentNameState(saved);
-                }}
-                placeholder="Type student name"
-                className="mt-2 w-full rounded-xl border-2 border-pink-200 bg-pink-50 px-3 py-2.5 text-sm font-semibold text-pink-800 outline-none transition focus:border-pink-400"
-              />
-              <p className="mt-2 text-xs font-semibold text-pink-700">
-                Attempts are saved offline and uploaded automatically when
-                online.
-              </p>
-            </div>
-
-            <div className="mt-4 grid gap-2.5 sm:mt-5 sm:flex sm:flex-wrap sm:gap-3">
-              <Link
-                href={startLearningHref}
-                className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-linear-to-r from-pink-500 to-pink-400 px-6 py-3.5 text-center text-base font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:-translate-y-0.5 hover:shadow-xl active:scale-[0.99] sm:w-auto sm:px-8"
-              >
-                {startLearningLabel} 🚀
-              </Link>
-              <Link
-                href="/levels"
-                className="flex min-h-12 w-full items-center justify-center rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3.5 text-center text-base font-bold text-pink-600 transition hover:bg-pink-100 active:scale-[0.99] sm:w-auto"
-              >
-                View All Levels
-              </Link>
-              <Link
-                href="/teacher"
-                className="flex min-h-12 w-full items-center justify-center rounded-2xl border-2 border-pink-300 bg-white px-6 py-3.5 text-center text-base font-bold text-pink-600 transition hover:bg-pink-50 active:scale-[0.99] sm:w-auto"
-              >
-                Teacher Dashboard
-              </Link>
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-3xl border-2 border-pink-200 bg-pink-50 p-4 sm:mt-8 sm:p-5">
-            <h3 className="text-lg font-extrabold text-pink-700">
-              🧠 Learning Stack
-            </h3>
-            <div className="mt-3 grid gap-3 sm:grid-cols-3">
-              {[
-                {
-                  step: "1",
-                  title: "Pick a Level",
-                  desc: "Choose easy, medium, or hard in the Levels page.",
-                },
-                {
-                  step: "2",
-                  title: "Answer & Learn",
-                  desc: "Read each card, answer, and check the explanation.",
-                },
-                {
-                  step: "3",
-                  title: "Track Progress",
-                  desc: "Pass levels and unlock the next challenge.",
-                },
-              ].map((s) => (
-                <div
-                  key={s.step}
-                  className="flex gap-3 rounded-2xl bg-white p-4 shadow-sm"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-pink-500 text-sm font-black text-white">
-                    {s.step}
-                  </span>
-                  <div>
-                    <p className="font-bold text-pink-800">{s.title}</p>
-                    <p className="mt-1 text-xs font-medium text-pink-700">
-                      {s.desc}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-2.5 sm:grid-cols-2 sm:gap-3">
-            <div className="rounded-2xl border border-pink-200 bg-white p-4">
-              <h4 className="font-extrabold text-pink-700">📚 Subject</h4>
-              <p className="mt-1 text-sm font-semibold text-pink-700">
-                Subject–Verb Agreement — Grade 5 English
-              </p>
-            </div>
-            <div className="rounded-2xl border border-pink-200 bg-white p-4">
-              <h4 className="font-extrabold text-pink-700">
-                🌐 Offline Status
-              </h4>
-              {isOfflineReady ? (
-                <p className="mt-1 flex items-center gap-2 text-sm font-bold text-green-600">
-                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
-                  OFFLINE READY — study anytime!
-                </p>
-              ) : (
-                <p className="mt-1 flex items-center gap-2 text-sm font-semibold text-pink-700">
-                  <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-yellow-400" />
-                  Preparing offline mode…
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-6 grid grid-cols-2 gap-2.5 sm:mt-8 sm:grid-cols-4 sm:gap-3">
-            {[
-              { icon: "🔀", label: "Shuffle Mode" },
-              { icon: "📴", label: "Works Offline" },
-              { icon: "⭐", label: "Earn Stars" },
-              { icon: "📊", label: "Score Tracker" },
-            ].map((f) => (
-              <div
-                key={f.label}
-                className="flex items-center gap-2.5 rounded-xl border border-pink-200 bg-pink-50/50 p-3"
-              >
-                <span className="text-xl">{f.icon}</span>
-                <span className="text-sm font-bold text-pink-700">
-                  {f.label}
+              <div className="mt-5 flex flex-wrap gap-2">
+                <span className="rounded-full border border-pink-200 bg-white px-3 py-1 text-xs font-bold text-pink-700">
+                  🎯 Quick lessons
+                </span>
+                <span className="rounded-full border border-pink-200 bg-white px-3 py-1 text-xs font-bold text-pink-700">
+                  📴 Works offline
+                </span>
+                <span className="rounded-full border border-pink-200 bg-white px-3 py-1 text-xs font-bold text-pink-700">
+                  ⭐ Earn rewards
                 </span>
               </div>
-            ))}
-          </div>
 
-          <div className="relative mt-6 sm:mt-8">
-            <h3 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-pink-700">
-              🔎 Explore Questions (Optional)
-            </h3>
-            <div className="flex items-center gap-2 rounded-2xl border-2 border-pink-200 bg-pink-50/50 px-4 py-3 transition focus-within:border-pink-400 focus-within:shadow-md">
-              <span className="text-xl text-pink-600">🔎</span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-                placeholder="Search questions or topics..."
-                className="w-full bg-transparent text-base font-semibold text-pink-900 outline-none placeholder:text-pink-600"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery("");
-                    setShowSearch(false);
-                  }}
-                  className="rounded-full bg-pink-200 px-2.5 py-0.5 text-xs font-bold text-pink-700 hover:bg-pink-300"
+              <div className="mt-6 grid gap-2.5 sm:flex sm:flex-wrap">
+                <Link
+                  href={startLearningHref}
+                  className="animate-pulse-glow inline-flex min-h-12 w-full items-center justify-center rounded-2xl bg-linear-to-r from-pink-500 to-pink-400 px-6 py-3 text-base font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:-translate-y-0.5 active:scale-[0.99] sm:w-auto"
                 >
-                  ✕
-                </button>
-              )}
-            </div>
+                  Start Learning 🚀
+                </Link>
+                <Link
+                  href="/levels"
+                  className="inline-flex min-h-12 w-full items-center justify-center rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3 text-base font-bold text-pink-700 transition hover:bg-pink-100 active:scale-[0.99] sm:w-auto"
+                >
+                  View Levels
+                </Link>
+              </div>
 
-            {showSearch && (
-              <div className="absolute left-0 right-0 top-full z-20 mt-2 max-h-64 overflow-y-auto rounded-2xl border-2 border-pink-200 bg-white p-3 shadow-xl">
-                {searchResults.length === 0 ? (
-                  <p className="py-4 text-center text-sm font-semibold text-pink-600">
-                    No matching questions found 🌷
+              <p className="mt-3 text-sm font-semibold text-pink-700">
+                {startLearningLabel} to keep your progress going.
+              </p>
+            </article>
+
+            <aside className="pink-gradient-subtle rounded-3xl border-2 border-pink-200 p-4 sm:p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-pink-600">
+                    Student Card
                   </p>
-                ) : (
-                  searchResults.map((card) => (
-                    <div
-                      key={card.id}
-                      className="rounded-xl border-b border-pink-100 p-3 last:border-0"
-                    >
-                      <p className="text-sm font-bold text-pink-800">
-                        {card.front}
-                      </p>
-                      <p className="mt-1 text-xs font-semibold text-pink-700">
-                        Answer: {card.options[card.answer]} &bull; {card.topic}
-                      </p>
-                    </div>
-                  ))
-                )}
+                  <h2 className="mt-1 text-xl font-black text-pink-900">
+                    Hi, {displayName}! 🌟
+                  </h2>
+                </div>
+                <div className="animate-float text-4xl">🧸</div>
               </div>
-            )}
+
+              <div className="mt-4 rounded-2xl border-2 border-pink-200 bg-white p-3">
+                <label
+                  htmlFor="student-name"
+                  className="text-xs font-extrabold uppercase tracking-wide text-pink-600"
+                >
+                  Student Name
+                </label>
+                <input
+                  id="student-name"
+                  type="text"
+                  value={studentName}
+                  onChange={(event) => setStudentNameState(event.target.value)}
+                  onBlur={() => {
+                    const saved = setStudentName(studentName);
+                    setStudentNameState(saved);
+                  }}
+                  placeholder="Type your name"
+                  className="mt-2 w-full rounded-xl border-2 border-pink-200 bg-pink-50 px-3 py-2.5 text-sm font-semibold text-pink-800 outline-none transition focus:border-pink-400"
+                />
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="col-span-2 rounded-2xl border border-pink-200 bg-white p-3 text-center">
+                  <p className="text-sm font-bold text-pink-700">
+                    Ready for today&apos;s lesson? Let&apos;s learn one step at
+                    a time.
+                  </p>
+                </div>
+              </div>
+            </aside>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-pink-200 bg-pink-50/50 p-5">
-            <h3 className="text-lg font-extrabold text-pink-700">
-              📋 About This App
-            </h3>
-            <p className="mt-2 text-sm font-semibold text-pink-700">
-              BlushCards: Grammar Fun is an interactive flashcard quiz designed
-              to help Grade 5 students master Subject-Verb Agreement in English.
-              It includes 40 questions across three difficulty levels with
-              instant feedback, star rewards, and full offline support.
-            </p>
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <div className="rounded-xl bg-white p-3 text-center">
-                <p className="text-xs font-bold uppercase text-pink-700">
-                  Owner
-                </p>
-                <p className="mt-1 text-sm font-extrabold text-pink-800">
-                  Ma. Marella N. Reodeque
-                </p>
-              </div>
-              <div className="rounded-xl bg-white p-3 text-center">
-                <p className="text-xs font-bold uppercase text-pink-700">
-                  Teacher / Adviser
-                </p>
-                <p className="mt-1 text-sm font-extrabold text-pink-800">
-                  Mr. Chael Villareal
-                </p>
-              </div>
-              <div className="rounded-xl bg-white p-3 text-center">
-                <p className="text-xs font-bold uppercase text-pink-700">
-                  School
-                </p>
-                <p className="mt-1 text-sm font-extrabold text-pink-800">
-                  St. Anne College Lucena, Inc.
-                </p>
-              </div>
-            </div>
-          </div>
+          <section className="mt-4 grid gap-3 md:grid-cols-2">
+            <article className="rounded-3xl border-2 border-pink-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-pink-600">
+                Continue Lesson
+              </p>
+              <h3 className="mt-2 text-lg font-black text-pink-900">
+                {flashcardLevelMeta[progressSummary.nextLevel].label} Level
+              </h3>
+              <p className="mt-1 text-sm font-semibold text-pink-700">
+                Pick up where you left off.
+              </p>
+              <Link
+                href={startLearningHref}
+                className="mt-4 inline-flex min-h-11.5 w-full items-center justify-center rounded-2xl bg-pink-500 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-pink-600 active:scale-[0.99]"
+              >
+                Continue ▶
+              </Link>
+            </article>
+
+            <article className="rounded-3xl border-2 border-pink-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-pink-600">
+                Browse Levels
+              </p>
+              <h3 className="mt-2 text-lg font-black text-pink-900">
+                Easy, Medium, Hard
+              </h3>
+              <p className="mt-1 text-sm font-semibold text-pink-700">
+                Choose your challenge and unlock new cards.
+              </p>
+              <Link
+                href="/levels"
+                className="mt-4 inline-flex min-h-11.5 w-full items-center justify-center rounded-2xl border-2 border-pink-300 bg-pink-50 px-4 py-2.5 text-sm font-bold text-pink-700 transition hover:bg-pink-100 active:scale-[0.99]"
+              >
+                Open Levels
+              </Link>
+            </article>
+          </section>
+
+          <footer className="mt-4 rounded-2xl border border-pink-200 bg-pink-50/70 p-3 text-center text-xs font-semibold text-pink-700">
+            Tap Start Learning to begin. Short lessons, instant feedback, and
+            offline reliability built for kids.
+          </footer>
         </section>
       </main>
 

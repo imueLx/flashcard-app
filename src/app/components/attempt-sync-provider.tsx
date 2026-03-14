@@ -14,6 +14,10 @@ export default function AttemptSyncProvider() {
         return;
       }
 
+      if (!window.navigator.onLine) {
+        return;
+      }
+
       try {
         await syncPendingAttempts();
       } catch {
@@ -26,7 +30,7 @@ export default function AttemptSyncProvider() {
     };
 
     const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "visible" && window.navigator.onLine) {
         void syncNow();
       }
     };

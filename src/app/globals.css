@@ -58,6 +58,12 @@ body {
   padding-bottom: max(env(safe-area-inset-bottom), 8px);
 }
 
+/* Reduce initial render cost on long pages like analytics tables. */
+.perf-section {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 720px;
+}
+
 /* ─── Animations ─── */
 @keyframes pop-in {
   0% {

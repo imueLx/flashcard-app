@@ -4,6 +4,7 @@ import { getMongoDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 
 type AttemptDocument = {
+  clientAttemptId: string;
   studentName: string;
   studentNameLower: string;
   level: FlashcardLevel;
@@ -54,19 +55,13 @@ function toSafePercent(value: unknown): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function toSafeDate(value: unknown): Date {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return new Date(value);
+function sanitizeClientAttemptId(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
   }
 
-  if (typeof value === "string") {
-    const parsed = Date.parse(value);
-    if (Number.isFinite(parsed)) {
-      return new Date(parsed);
-    }
-  }
-
-  return new Date();
+  const trimmed = value.trim();
+  return trimmed;
 }
 
 function mapResponse(
@@ -103,8 +98,19 @@ export async function POST(request: Request) {
     const total = toSafeInt(body.total);
     const masteryPercent = toSafePercent(body.masteryPercent);
     const studentName = sanitizeStudentName(body.studentName);
+    const clientAttemptId = sanitizeClientAttemptId(body.clientAttemptId);
+
+    if (!clientAttemptId) {
+      return NextResponse.json(
+        { error: "Missing clientAttemptId" },
+        { status: 400 },
+      );
+    }
+
+    const now = new Date();
 
     const payload: AttemptDocument = {
+      clientAttemptId,
       studentName,
       studentNameLower: studentName.toLowerCase(),
       level,
@@ -112,16 +118,30 @@ export async function POST(request: Request) {
       total,
       masteryPercent,
       passed: Boolean(body.passed),
-      completedAt: toSafeDate(body.completedAt),
+      completedAt: now,
       deviceId:
         typeof body.deviceId === "string" && body.deviceId.length > 0
           ? body.deviceId
           : "unknown-device",
-      createdAt: new Date(),
+      createdAt: now,
     };
 
     const db = await getMongoDb();
     const collection = db.collection<AttemptDocument>("attempts");
+
+    const existing = await collection.findOne({
+      clientAttemptId,
+      deviceId: payload.deviceId,
+    });
+
+    if (existing && "_id" in existing) {
+      return NextResponse.json({
+        ok: true,
+        id: String((existing as AttemptDocument & { _id: ObjectId })._id),
+        duplicate: true,
+      });
+    }
+
     const result = await collection.insertOne(payload);
 
     return NextResponse.json({ ok: true, id: result.insertedId.toString() });

@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "optimize:images": "node scripts/optimize-flashcard-images.mjs"
+    "optimize:images": "node scripts/optimize-flashcard-images.mjs",
+    "seed:mock": "node scripts/seed-mock-attempts.mjs"
   },
   "dependencies": {
     "mongodb": "^6.20.0",

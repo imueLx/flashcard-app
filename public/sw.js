@@ -1,6 +1,6 @@
-const CACHE_NAME = "blushcards-grammar-fun-v14";
+const CACHE_NAME = "blushcards-grammar-fun-v16";
 const RUNTIME_CACHE_NAME = `${CACHE_NAME}-runtime`;
-const MAX_RUNTIME_ENTRIES = 200;
+const MAX_RUNTIME_ENTRIES = 120;
 const STATIC_APP_SHELL = [
   "/",
   "/levels",
@@ -28,9 +28,10 @@ const ROUTES_TO_WARM = [
 ];
 
 const FLASHCARD_IMAGE_IDS = Array.from({ length: 40 }, (_, index) => index + 1);
+const INSTALL_PRECACHE_FLASHCARD_IDS = FLASHCARD_IMAGE_IDS.slice(0, 12);
 
-function getFlashcardImageCandidates() {
-  return FLASHCARD_IMAGE_IDS.map((id) => `/images/flashcards/${id}.webp`);
+function getFlashcardImageCandidates(ids = FLASHCARD_IMAGE_IDS) {
+  return ids.map((id) => `/images/flashcards/${id}.webp`);
 }
 
 const ASSET_URL_PATTERN = /(?:src|href)=["']([^"']+)["']/g;
@@ -119,7 +120,10 @@ self.addEventListener("install", (event) => {
     (async () => {
       const cache = await caches.open(CACHE_NAME);
       await precacheUrls(cache, STATIC_APP_SHELL);
-      await precacheUrls(cache, getFlashcardImageCandidates());
+      await precacheUrls(
+        cache,
+        getFlashcardImageCandidates(INSTALL_PRECACHE_FLASHCARD_IDS),
+      );
       await Promise.all(
         ROUTES_TO_WARM.map((route) => warmRouteAndAssets(cache, route)),
       );
@@ -150,6 +154,12 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
   if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // Keep dashboard data live and online-only by avoiding service worker cache for attempts API.
+  if (url.pathname.startsWith("/api/attempts")) {
+    event.respondWith(fetch(event.request));
     return;
   }
 
