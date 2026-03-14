@@ -630,21 +630,17 @@ export default function TeacherPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [isOnline, setIsOnline] = useState(() => {
-    if (typeof window === "undefined") {
-      return true;
-    }
-
-    return window.navigator.onLine;
-  });
   const [studentsPerPage, setStudentsPerPage] = useState<PerPageCount>(10);
   const [attemptsPerPage, setAttemptsPerPage] = useState<PerPageCount>(20);
   const [studentPage, setStudentPage] = useState(1);
   const [attemptPage, setAttemptPage] = useState(1);
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
-  const [dataSource, setDataSource] = useState<"online" | "offline" | null>(
-    null,
-  );
+  const [levelPerPage, setLevelPerPage] = useState<PerPageCount>(10);
+  const [levelPage, setLevelPage] = useState(1);
+  const [studentAttemptsPerPage, setStudentAttemptsPerPage] =
+    useState<PerPageCount>(10);
+  const [studentAttemptsPage, setStudentAttemptsPage] = useState(1);
+  const [incorrectPerPage, setIncorrectPerPage] = useState<PerPageCount>(10);
+  const [incorrectPage, setIncorrectPage] = useState(1);
 
   const loadAttempts = useCallback(async () => {
     setIsLoading(true);
@@ -666,23 +662,9 @@ export default function TeacherPage() {
         ? payload.attempts
         : [];
       setLiveAttempts(incomingAttempts);
-      setDataSource("online");
-      setLastSyncedAt(new Date().toISOString());
-
-      if (incomingAttempts.length === 0) {
-        setNotice(
-          "No live attempts yet. Use npm run seed:mock to add test records in MongoDB.",
-        );
-      }
     } catch (loadError) {
       setLiveAttempts([]);
-      setDataSource(window.navigator.onLine ? null : "offline");
-      setLastSyncedAt(null);
-      setNotice(
-        window.navigator.onLine
-          ? "Live data request failed. Try refresh."
-          : "Dashboard is online-only. Reconnect internet to view live data.",
-      );
+      setNotice("No data yet.");
 
       const message =
         loadError instanceof Error
@@ -696,26 +678,7 @@ export default function TeacherPage() {
 
   useEffect(() => {
     void loadAttempts();
-
-    const onOnline = () => {
-      setIsOnline(true);
-      void loadAttempts();
-    };
-    const onOffline = () => {
-      setIsOnline(false);
-      setDataSource("offline");
-      setNotice(
-        "Dashboard is online-only. Reconnect internet to view live data.",
-      );
-    };
-
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
-
-    return () => {
-      window.removeEventListener("online", onOnline);
-      window.removeEventListener("offline", onOffline);
-    };
+    return () => {};
   }, [loadAttempts]);
 
   const liveEvents = useMemo(
@@ -765,23 +728,60 @@ export default function TeacherPage() {
     1,
     Math.ceil(learnerProfiles.length / studentsPerPage),
   );
+  const levelTotalPages = Math.max(
+    1,
+    Math.ceil(levelPerformance.length / levelPerPage),
+  );
   const attemptTotalPages = Math.max(
     1,
     Math.ceil(liveAttempts.length / attemptsPerPage),
   );
+  const studentAttemptsTotalPages = Math.max(
+    1,
+    Math.ceil(studentLevelAttempts.length / studentAttemptsPerPage),
+  );
+  const incorrectTotalPages = Math.max(
+    1,
+    Math.ceil(topIncorrectQuestions.length / incorrectPerPage),
+  );
   const effectiveStudentPage = Math.min(studentPage, studentTotalPages);
+  const effectiveLevelPage = Math.min(levelPage, levelTotalPages);
   const effectiveAttemptPage = Math.min(attemptPage, attemptTotalPages);
+  const effectiveStudentAttemptsPage = Math.min(
+    studentAttemptsPage,
+    studentAttemptsTotalPages,
+  );
+  const effectiveIncorrectPage = Math.min(incorrectPage, incorrectTotalPages);
 
   const visibleProfiles = useMemo(() => {
     const start = (effectiveStudentPage - 1) * studentsPerPage;
     return learnerProfiles.slice(start, start + studentsPerPage);
   }, [effectiveStudentPage, learnerProfiles, studentsPerPage]);
 
+  const visibleLevelPerformance = useMemo(() => {
+    const start = (effectiveLevelPage - 1) * levelPerPage;
+    return levelPerformance.slice(start, start + levelPerPage);
+  }, [effectiveLevelPage, levelPerPage, levelPerformance]);
+
   const filteredAttempts = useMemo(() => {
     return [...liveAttempts].sort(
       (a, b) => toTimestamp(b.completedAt) - toTimestamp(a.completedAt),
     );
   }, [liveAttempts]);
+
+  const visibleStudentLevelAttempts = useMemo(() => {
+    const start = (effectiveStudentAttemptsPage - 1) * studentAttemptsPerPage;
+    return studentLevelAttempts.slice(start, start + studentAttemptsPerPage);
+  }, [
+    effectiveStudentAttemptsPage,
+    studentAttemptsPerPage,
+    studentLevelAttempts,
+  ]);
+
+  const visibleIncorrectQuestions = useMemo(() => {
+    const start = (effectiveIncorrectPage - 1) * incorrectPerPage;
+    return topIncorrectQuestions.slice(start, start + incorrectPerPage);
+  }, [effectiveIncorrectPage, incorrectPerPage, topIncorrectQuestions]);
 
   const visibleAttempts = useMemo(() => {
     const start = (effectiveAttemptPage - 1) * attemptsPerPage;
@@ -824,20 +824,6 @@ export default function TeacherPage() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 rounded-2xl border-2 border-pink-200 bg-pink-50 p-3 sm:grid-cols-1 sm:p-4">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-pink-600">
-                Data Source
-              </p>
-              <p className="mt-1 text-sm font-bold text-pink-800">
-                {dataSource ?? "-"} {isOnline ? "(online)" : "(offline)"}
-              </p>
-              <p className="text-xs font-semibold text-pink-700">
-                Last sync: {lastSyncedAt ? formatDate(lastSyncedAt) : "none"}
-              </p>
-            </div>
-          </div>
-
           {error && (
             <div className="mt-4 rounded-2xl border-2 border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
               {error}
@@ -855,8 +841,7 @@ export default function TeacherPage() {
             </div>
           ) : showEmpty ? (
             <div className="mt-6 rounded-2xl border-2 border-pink-200 bg-pink-50 p-4 text-sm font-bold text-pink-700">
-              No live analytics events yet. Seed MongoDB test data with npm run
-              seed:mock and refresh this page.
+              No student information yet.
             </div>
           ) : (
             <div className="mt-6 space-y-6">
@@ -901,6 +886,29 @@ export default function TeacherPage() {
                   Added average score and pass rate for a clearer per-level
                   view.
                 </p>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-pink-200 bg-white p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wide text-pink-600">
+                      Per page
+                    </span>
+                    {[10, 20, 50].map((count) => (
+                      <button
+                        key={`level-per-page-${count}`}
+                        type="button"
+                        onClick={() => {
+                          setLevelPerPage(count as PerPageCount);
+                          setLevelPage(1);
+                        }}
+                        className={`rounded-xl border-2 px-3 py-1 text-xs font-extrabold ${levelPerPage === count ? "border-pink-500 bg-pink-500 text-white" : "border-pink-300 bg-pink-50 text-pink-700"}`}
+                      >
+                        {count}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs font-semibold text-pink-700">
+                    Page {effectiveLevelPage} of {levelTotalPages}
+                  </p>
+                </div>
                 <div className="mt-3 overflow-x-auto rounded-2xl border-2 border-pink-200">
                   <table className="min-w-full bg-white text-xs sm:text-sm">
                     <thead className="bg-pink-50 text-left text-xs font-black uppercase tracking-wide text-pink-700">
@@ -915,7 +923,7 @@ export default function TeacherPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {levelPerformance.map((row) => (
+                      {visibleLevelPerformance.map((row) => (
                         <tr
                           key={row.level}
                           className="border-t border-pink-100 text-pink-800"
@@ -936,12 +944,60 @@ export default function TeacherPage() {
                     </tbody>
                   </table>
                 </div>
+                <div className="mt-3 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLevelPage((previous) => Math.max(1, previous - 1))
+                    }
+                    disabled={effectiveLevelPage <= 1}
+                    className="rounded-xl border-2 border-pink-300 bg-pink-50 px-3 py-1 text-xs font-bold text-pink-700 disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLevelPage((previous) =>
+                        Math.min(levelTotalPages, previous + 1),
+                      )
+                    }
+                    disabled={effectiveLevelPage >= levelTotalPages}
+                    className="rounded-xl border-2 border-pink-300 bg-pink-50 px-3 py-1 text-xs font-bold text-pink-700 disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
               </section>
 
               <section className="perf-section">
                 <h2 className="text-lg font-black text-pink-900">
                   Attempts Per Level by Student
                 </h2>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-pink-200 bg-white p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wide text-pink-600">
+                      Per page
+                    </span>
+                    {[10, 20, 50].map((count) => (
+                      <button
+                        key={`student-attempts-per-page-${count}`}
+                        type="button"
+                        onClick={() => {
+                          setStudentAttemptsPerPage(count as PerPageCount);
+                          setStudentAttemptsPage(1);
+                        }}
+                        className={`rounded-xl border-2 px-3 py-1 text-xs font-extrabold ${studentAttemptsPerPage === count ? "border-pink-500 bg-pink-500 text-white" : "border-pink-300 bg-pink-50 text-pink-700"}`}
+                      >
+                        {count}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs font-semibold text-pink-700">
+                    Page {effectiveStudentAttemptsPage} of{" "}
+                    {studentAttemptsTotalPages}
+                  </p>
+                </div>
                 <div className="mt-3 overflow-x-auto rounded-2xl border-2 border-pink-200">
                   <table className="min-w-full bg-white text-sm">
                     <thead className="bg-pink-50 text-left text-xs font-black uppercase tracking-wide text-pink-700">
@@ -954,7 +1010,7 @@ export default function TeacherPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {studentLevelAttempts.map((row) => (
+                      {visibleStudentLevelAttempts.map((row) => (
                         <tr
                           key={row.studentName}
                           className="border-t border-pink-100 text-pink-800"
@@ -971,6 +1027,34 @@ export default function TeacherPage() {
                     </tbody>
                   </table>
                 </div>
+                <div className="mt-3 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setStudentAttemptsPage((previous) =>
+                        Math.max(1, previous - 1),
+                      )
+                    }
+                    disabled={effectiveStudentAttemptsPage <= 1}
+                    className="rounded-xl border-2 border-pink-300 bg-pink-50 px-3 py-1 text-xs font-bold text-pink-700 disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setStudentAttemptsPage((previous) =>
+                        Math.min(studentAttemptsTotalPages, previous + 1),
+                      )
+                    }
+                    disabled={
+                      effectiveStudentAttemptsPage >= studentAttemptsTotalPages
+                    }
+                    className="rounded-xl border-2 border-pink-300 bg-pink-50 px-3 py-1 text-xs font-bold text-pink-700 disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
               </section>
 
               <section className="perf-section">
@@ -982,6 +1066,29 @@ export default function TeacherPage() {
                     Ranked by incorrect answers only (skipped answers are not
                     included). Full question text is shown.
                   </p>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-pink-200 bg-pink-50 p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wide text-pink-600">
+                        Per page
+                      </span>
+                      {[10, 20, 50].map((count) => (
+                        <button
+                          key={`incorrect-per-page-${count}`}
+                          type="button"
+                          onClick={() => {
+                            setIncorrectPerPage(count as PerPageCount);
+                            setIncorrectPage(1);
+                          }}
+                          className={`rounded-xl border-2 px-3 py-1 text-xs font-extrabold ${incorrectPerPage === count ? "border-pink-500 bg-pink-500 text-white" : "border-pink-300 bg-pink-50 text-pink-700"}`}
+                        >
+                          {count}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs font-semibold text-pink-700">
+                      Page {effectiveIncorrectPage} of {incorrectTotalPages}
+                    </p>
+                  </div>
                   <div className="mt-3 overflow-x-auto rounded-xl border border-pink-100">
                     <table className="min-w-full text-xs sm:text-sm">
                       <thead className="bg-pink-50 text-left text-xs font-black uppercase tracking-wide text-pink-700">
@@ -992,7 +1099,7 @@ export default function TeacherPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {topIncorrectQuestions.map((item) => (
+                        {visibleIncorrectQuestions.map((item) => (
                           <tr
                             key={`${item.level}-${item.questionText}`}
                             className="border-t border-pink-100 text-pink-800"
@@ -1010,6 +1117,32 @@ export default function TeacherPage() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setIncorrectPage((previous) =>
+                          Math.max(1, previous - 1),
+                        )
+                      }
+                      disabled={effectiveIncorrectPage <= 1}
+                      className="rounded-xl border-2 border-pink-300 bg-pink-50 px-3 py-1 text-xs font-bold text-pink-700 disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setIncorrectPage((previous) =>
+                          Math.min(incorrectTotalPages, previous + 1),
+                        )
+                      }
+                      disabled={effectiveIncorrectPage >= incorrectTotalPages}
+                      className="rounded-xl border-2 border-pink-300 bg-pink-50 px-3 py-1 text-xs font-bold text-pink-700 disabled:opacity-50"
+                    >
+                      Next
+                    </button>
                   </div>
                 </article>
               </section>
@@ -1273,8 +1406,8 @@ export default function TeacherPage() {
                     strength.
                   </p>
                   <p>
-                    Skill labels are derived from the actual question text in
-                    your flashcard dataset (not MongoDB IDs).
+                    Skill labels are derived from question text in the flashcard
+                    set.
                   </p>
                 </div>
               </section>
