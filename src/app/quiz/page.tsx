@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Suspense,
   useCallback,
@@ -35,6 +35,7 @@ import {
 } from "../data/level-progress";
 import {
   getStudentName,
+  hasStudentName,
   queueStudentAttempt,
   syncPendingAttempts,
 } from "../data/student-attempt";
@@ -82,12 +83,15 @@ export default function QuizPage() {
 }
 
 function QuizContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const level = normalizeLevel(searchParams.get("level"));
   const levelMeta = flashcardLevelMeta[level];
   const baseCards = getFlashcardsByLevel(level);
   const quizStateKey = `quiz-state-v2-${level}`;
   const [isAttemptRecorded, setIsAttemptRecorded] = useState(false);
+  const [studentNameForAttempt, setStudentNameForAttempt] = useState("");
+  const [isStudentNameReady, setIsStudentNameReady] = useState(false);
 
   const [isHydrated, setIsHydrated] = useState(false);
   const [levelProgress, setLevelProgress] = useState<LevelProgressMap>(
@@ -154,9 +158,25 @@ function QuizContent() {
   const didPassCurrentRun = isPassed(score, cards.length);
 
   useEffect(() => {
+    const savedStudentName = getStudentName();
+
+    if (!hasStudentName(savedStudentName)) {
+      router.replace(`/?requiredName=1&level=${level}`);
+      return;
+    }
+
+    setStudentNameForAttempt(savedStudentName);
+    setIsStudentNameReady(true);
+  }, [level, router]);
+
+  useEffect(() => {
+    if (!isStudentNameReady) {
+      return;
+    }
+
     setLevelProgress(readLevelProgress());
     setIsLevelProgressReady(true);
-  }, []);
+  }, [isStudentNameReady]);
 
   function hasSameOrder(first: Flashcard[], second: Flashcard[]): boolean {
     if (first.length !== second.length) {
@@ -395,7 +415,7 @@ function QuizContent() {
     );
 
     queueStudentAttempt({
-      studentName: getStudentName(),
+      studentName: studentNameForAttempt,
       level,
       score,
       total: cards.length,
@@ -421,6 +441,7 @@ function QuizContent() {
     masteryPercent,
     quizDone,
     score,
+    studentNameForAttempt,
   ]);
 
   useEffect(() => {
@@ -599,7 +620,7 @@ function QuizContent() {
     }
   }
 
-  if (!isLevelProgressReady) return <QuizLoadingShell />;
+  if (!isStudentNameReady || !isLevelProgressReady) return <QuizLoadingShell />;
 
   if (!levelUnlocked) {
     const requiredLevel = unlockRequirement

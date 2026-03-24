@@ -134,13 +134,15 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
+  const activeCacheNames = new Set([CACHE_NAME, RUNTIME_CACHE_NAME]);
+
   event.waitUntil(
     caches
       .keys()
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_NAME)
+            .filter((key) => !activeCacheNames.has(key))
             .map((key) => caches.delete(key)),
         ),
       ),

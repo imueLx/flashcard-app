@@ -32,6 +32,10 @@ function trimStudentName(value: string): string {
   return trimmed.length > 0 ? trimmed : "Unknown Student";
 }
 
+function normalizeStudentNameInput(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
 function generateDeviceId(): string {
   if (
     typeof crypto !== "undefined" &&
@@ -64,14 +68,24 @@ export function getStudentName(): string {
   return saved;
 }
 
+export function hasStudentName(value = getStudentName()): boolean {
+  return normalizeStudentNameInput(value).length > 0;
+}
+
 export function setStudentName(value: string): string {
   const safeWindow = getSafeWindow();
-  const normalized = trimStudentName(value);
+  const normalizedInput = normalizeStudentNameInput(value);
 
   if (!safeWindow) {
-    return normalized;
+    return normalizedInput;
   }
 
+  if (normalizedInput.length === 0) {
+    safeWindow.localStorage.removeItem(STUDENT_NAME_KEY);
+    return "";
+  }
+
+  const normalized = trimStudentName(normalizedInput);
   safeWindow.localStorage.setItem(STUDENT_NAME_KEY, normalized);
   return normalized;
 }
@@ -209,6 +223,22 @@ export function getPendingAttemptCount(): number {
   return readUploadQueue().length;
 }
 
+function shouldRetrySyncResponse(status: number): boolean {
+  if (status === 400) {
+    return false;
+  }
+
+  if (status === 408 || status === 425 || status === 429) {
+    return true;
+  }
+
+  if (status >= 500) {
+    return true;
+  }
+
+  return true;
+}
+
 export async function syncPendingAttempts(): Promise<{
   uploaded: number;
   remaining: number;
@@ -261,7 +291,7 @@ export async function syncPendingAttempts(): Promise<{
           continue;
         }
 
-        if (response.status >= 400 && response.status < 500) {
+        if (!shouldRetrySyncResponse(response.status)) {
           continue;
         }
 

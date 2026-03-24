@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   flashcardLevelMeta,
@@ -15,17 +16,21 @@ import {
   readLevelProgress,
   type LevelProgressMap,
 } from "../data/level-progress";
+import { hasStudentName } from "../data/student-attempt";
 
 export default function LevelsPage() {
+  const router = useRouter();
   const [levelProgress, setLevelProgress] = useState<LevelProgressMap>(
     createDefaultLevelProgress,
   );
   const [isLevelProgressReady, setIsLevelProgressReady] = useState(false);
+  const [canStartQuiz, setCanStartQuiz] = useState(false);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       setLevelProgress(readLevelProgress());
       setIsLevelProgressReady(true);
+      setCanStartQuiz(hasStudentName());
     }, 0);
 
     return () => {
@@ -44,6 +49,15 @@ export default function LevelsPage() {
     medium: "from-pink-200 to-pink-100",
     hard: "from-pink-300 to-pink-200",
   };
+
+  function startQuiz(level: FlashcardLevel) {
+    if (!hasStudentName()) {
+      router.push("/?requiredName=1");
+      return;
+    }
+
+    router.push(`/quiz?level=${level}`);
+  }
 
   return (
     <div className="safe-area-content min-h-screen bg-background px-3 py-4 text-foreground sm:px-4 sm:py-8">
@@ -68,6 +82,12 @@ export default function LevelsPage() {
               ← Home
             </Link>
           </div>
+
+          {!canStartQuiz && isLevelProgressReady && (
+            <div className="mt-4 rounded-2xl border-2 border-pink-200 bg-pink-50 px-4 py-3 text-sm font-bold text-pink-700">
+              Add a name or nickname on the home page before starting a quiz.
+            </div>
+          )}
 
           {!isLevelProgressReady ? (
             <div className="mt-6 rounded-2xl border-2 border-pink-200 bg-pink-50 p-5 text-center">
@@ -142,12 +162,13 @@ export default function LevelsPage() {
                     </div>
 
                     {unlocked ? (
-                      <Link
-                        href={`/quiz?level=${level}`}
+                      <button
+                        type="button"
+                        onClick={() => startQuiz(level)}
                         className="mt-4 inline-flex min-h-11.5 w-full items-center justify-center rounded-2xl border-2 border-pink-400 bg-white px-4 py-3 text-sm font-extrabold text-pink-600 transition hover:bg-pink-500 hover:text-white active:scale-[0.99]"
                       >
                         Play {cfg.label} ▶
-                      </Link>
+                      </button>
                     ) : (
                       <button
                         type="button"

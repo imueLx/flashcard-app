@@ -1,14 +1,17 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flashcardLevelMeta, type FlashcardLevel } from "./data/flashcard";
 import {
-  createDefaultLevelProgress,
   readLevelProgress,
   type LevelProgressMap,
 } from "./data/level-progress";
-import { getStudentName, setStudentName } from "./data/student-attempt";
+import {
+  getStudentName,
+  hasStudentName,
+  setStudentName,
+} from "./data/student-attempt";
 
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -19,23 +22,57 @@ type WindowWithInstallPrompt = Window & {
   __deferredInstallPrompt?: InstallPromptEvent | null;
 };
 
+function isStandaloneDisplayMode() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (window.navigator as Navigator & { standalone?: boolean }).standalone ===
+      true
+  );
+}
+
+function hasDeferredInstallPrompt() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return Boolean((window as WindowWithInstallPrompt).__deferredInstallPrompt);
+}
+
 export default function Home() {
+  const router = useRouter();
   const deferredPromptRef = useRef<InstallPromptEvent | null>(null);
   const platformRef = useRef<"ios" | "android" | "desktop">("desktop");
+  const studentNameInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [canPromptInstall, setCanPromptInstall] = useState(false);
+  const [canPromptInstall, setCanPromptInstall] = useState(
+    hasDeferredInstallPrompt,
+  );
   const [isInstalled, setIsInstalled] = useState(false);
   const [installHint, setInstallHint] = useState("");
   const [isPreparingInstall, setIsPreparingInstall] = useState(false);
   const [showIOSGuide, setShowIOSGuide] = useState(false);
-  const [isStandaloneMode, setIsStandaloneMode] = useState(false);
+  const [isStandaloneMode] = useState(isStandaloneDisplayMode);
 
-  const [levelProgress, setLevelProgress] = useState<LevelProgressMap>(
-    createDefaultLevelProgress(),
-  );
-  const [studentName, setStudentNameState] = useState("");
+  const [levelProgress, setLevelProgress] =
+    useState<LevelProgressMap>(readLevelProgress);
+  const [studentName, setStudentNameState] = useState(getStudentName);
+  const [nameError, setNameError] = useState(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    return params.get("requiredName") === "1" && !hasStudentName(getStudentName())
+      ? "Enter your name or nickname before starting a quiz."
+      : "";
+  });
 
   const isInstalledOrStandalone = isInstalled || isStandaloneMode;
+  const hasSavedStudentName = hasStudentName(studentName);
 
   const progressSummary = useMemo(() => {
     const nextLevel: FlashcardLevel = !levelProgress.easy.passed
@@ -57,19 +94,6 @@ export default function Home() {
 
   const startLearningHref = `/quiz?level=${progressSummary.nextLevel}`;
   const startLearningLabel = progressSummary.continueLabel;
-
-  useEffect(() => {
-    const globalWindow = window as WindowWithInstallPrompt;
-    const standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (window.navigator as Navigator & { standalone?: boolean }).standalone ===
-        true;
-
-    setIsStandaloneMode(standalone);
-    setCanPromptInstall(Boolean(globalWindow.__deferredInstallPrompt));
-    setLevelProgress(readLevelProgress());
-    setStudentNameState(getStudentName());
-  }, []);
 
   useEffect(() => {
     const ua = navigator.userAgent.toLowerCase();
@@ -221,6 +245,44 @@ export default function Home() {
       window.addEventListener("beforeinstallprompt", onAvailable);
       onAvailable();
     });
+  }
+
+  function saveStudentNameValue() {
+    const saved = setStudentName(studentName);
+    setStudentNameState(saved);
+    return saved;
+  }
+
+  function requireStudentName() {
+    const saved = saveStudentNameValue();
+    if (hasStudentName(saved)) {
+      setNameError("");
+      return true;
+    }
+
+    setNameError("Enter your name or nickname before starting a quiz.");
+    studentNameInputRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    studentNameInputRef.current?.focus();
+    return false;
+  }
+
+  function startQuiz(levelHref: string) {
+    if (!requireStudentName()) {
+      return;
+    }
+
+    router.push(levelHref);
+  }
+
+  function openLevels() {
+    if (!requireStudentName()) {
+      return;
+    }
+
+    router.push("/levels");
   }
 
   async function installApp() {
@@ -425,18 +487,20 @@ export default function Home() {
               </div>
 
               <div className="mt-6 grid gap-2.5 sm:flex sm:flex-wrap">
-                <Link
-                  href={startLearningHref}
+                <button
+                  type="button"
+                  onClick={() => startQuiz(startLearningHref)}
                   className="animate-pulse-glow inline-flex min-h-12 w-full items-center justify-center rounded-2xl bg-linear-to-r from-pink-500 to-pink-400 px-6 py-3 text-base font-extrabold text-white shadow-lg shadow-pink-500/25 transition hover:-translate-y-0.5 active:scale-[0.99] sm:w-auto"
                 >
                   Start Learning 🚀
-                </Link>
-                <Link
-                  href="/levels"
+                </button>
+                <button
+                  type="button"
+                  onClick={openLevels}
                   className="inline-flex min-h-12 w-full items-center justify-center rounded-2xl border-2 border-pink-300 bg-pink-50 px-6 py-3 text-base font-bold text-pink-700 transition hover:bg-pink-100 active:scale-[0.99] sm:w-auto"
                 >
                   View Levels
-                </Link>
+                </button>
               </div>
 
               <p className="mt-3 text-sm font-semibold text-pink-700">
@@ -465,24 +529,36 @@ export default function Home() {
                   Student Name
                 </label>
                 <input
+                  ref={studentNameInputRef}
                   id="student-name"
                   type="text"
                   value={studentName}
-                  onChange={(event) => setStudentNameState(event.target.value)}
-                  onBlur={() => {
-                    const saved = setStudentName(studentName);
-                    setStudentNameState(saved);
+                  onChange={(event) => {
+                    setStudentNameState(event.target.value);
+                    if (nameError) {
+                      setNameError("");
+                    }
                   }}
+                  onBlur={saveStudentNameValue}
                   placeholder="Type your name"
-                  className="mt-2 w-full rounded-xl border-2 border-pink-200 bg-pink-50 px-3 py-2.5 text-sm font-semibold text-pink-800 outline-none transition focus:border-pink-400"
+                  aria-invalid={nameError ? "true" : "false"}
+                  className={`mt-2 w-full rounded-xl border-2 bg-pink-50 px-3 py-2.5 text-sm font-semibold text-pink-800 outline-none transition focus:border-pink-400 ${
+                    nameError ? "border-red-300" : "border-pink-200"
+                  }`}
                 />
+                {nameError && (
+                  <p className="mt-2 text-xs font-bold text-red-500">
+                    {nameError}
+                  </p>
+                )}
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <div className="col-span-2 rounded-2xl border border-pink-200 bg-white p-3 text-center">
                   <p className="text-sm font-bold text-pink-700">
-                    Ready for today&apos;s lesson? Let&apos;s learn one step at
-                    a time.
+                    {hasSavedStudentName
+                      ? "Ready for today's lesson? Let's learn one step at a time."
+                      : "Add your name or nickname first, then you can start your quiz."}
                   </p>
                 </div>
               </div>
@@ -500,12 +576,13 @@ export default function Home() {
               <p className="mt-1 text-sm font-semibold text-pink-700">
                 Pick up where you left off.
               </p>
-              <Link
-                href={startLearningHref}
+              <button
+                type="button"
+                onClick={() => startQuiz(startLearningHref)}
                 className="mt-4 inline-flex min-h-11.5 w-full items-center justify-center rounded-2xl bg-pink-500 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-pink-600 active:scale-[0.99]"
               >
                 Continue ▶
-              </Link>
+              </button>
             </article>
 
             <article className="rounded-3xl border-2 border-pink-200 bg-white p-4 shadow-sm">
@@ -518,12 +595,13 @@ export default function Home() {
               <p className="mt-1 text-sm font-semibold text-pink-700">
                 Choose your challenge and unlock new cards.
               </p>
-              <Link
-                href="/levels"
+              <button
+                type="button"
+                onClick={openLevels}
                 className="mt-4 inline-flex min-h-11.5 w-full items-center justify-center rounded-2xl border-2 border-pink-300 bg-pink-50 px-4 py-2.5 text-sm font-bold text-pink-700 transition hover:bg-pink-100 active:scale-[0.99]"
               >
                 Open Levels
-              </Link>
+              </button>
             </article>
           </section>
 
